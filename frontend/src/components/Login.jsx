@@ -13,10 +13,11 @@ export default function Login({ onLogin, switchToSignup, switchToAdminLogin }) {
   const submit = async (e) => {
     e.preventDefault()
     setLoading(true)
-    setError('')
+    // Do NOT clear error here – keep it visible while the new request is in-flight
     try {
       const resp = await authService.login({ email, password })
       if (resp?.data?.access_token) {
+        setError('') // Only clear on success
         saveAuth(resp.data.access_token, resp.data.user)
         onLogin(resp.data.user)
       } else {
@@ -24,13 +25,16 @@ export default function Login({ onLogin, switchToSignup, switchToAdminLogin }) {
       }
     } catch (err) {
       console.error('[Login Component] Error:', err)
-      let errorMsg = 'Login failed'
-      if (err.response?.data?.detail) {
-        errorMsg = err.response.data.detail
+      let errorMsg = 'Invalid email or password.'
+      const detail = err.response?.data?.detail
+      if (detail === 'Invalid email or password.') {
+        errorMsg = 'Invalid email or password.'
+      } else if (detail === 'Your account has been disabled by the administrator.') {
+        errorMsg = 'Your account has been disabled by the administrator.'
       } else if (err.code === 'ERR_NETWORK' || err.message === 'Network Error') {
-        errorMsg = 'Cannot connect to server. Make sure the backend is running on http://localhost:8000'
+        errorMsg = 'Cannot connect to server. Please make sure the backend is running.'
       } else if (err.message) {
-        errorMsg = err.message
+        errorMsg = 'Invalid email or password.'
       }
       setError(errorMsg)
     } finally {
@@ -70,7 +74,17 @@ export default function Login({ onLogin, switchToSignup, switchToAdminLogin }) {
               <p>Sign in to your estimator account</p>
             </div>
 
-            {error && <div className="auth-error">{error}</div>}
+            {error && (
+              <div className="auth-error auth-error--dismissible">
+                <span>{error}</span>
+                <button
+                  type="button"
+                  className="auth-error-close"
+                  onClick={() => setError('')}
+                  aria-label="Dismiss error"
+                >×</button>
+              </div>
+            )}
 
             <form onSubmit={submit} className="auth-form">
               <div className="auth-field">
@@ -78,7 +92,10 @@ export default function Login({ onLogin, switchToSignup, switchToAdminLogin }) {
                 <input
                   type="email"
                   value={email}
-                  onChange={e => setEmail(e.target.value)}
+                  onChange={e => {
+                    setEmail(e.target.value)
+                    if (error) setError('')
+                  }}
                   placeholder="you@company.com"
                   required
                 />
@@ -89,7 +106,10 @@ export default function Login({ onLogin, switchToSignup, switchToAdminLogin }) {
                   <input
                     type={showPassword ? 'text' : 'password'}
                     value={password}
-                    onChange={e => setPassword(e.target.value)}
+                    onChange={e => {
+                      setPassword(e.target.value)
+                      if (error) setError('')
+                    }}
                     placeholder="••••••••"
                     required
                   />

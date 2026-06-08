@@ -9,21 +9,40 @@ export default function Signup({ onSignup, switchToLogin }) {
   const [confirmPassword, setConfirmPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
+  const [fieldErrors, setFieldErrors] = useState({})
   const [loading, setLoading] = useState(false)
   const [logoFailed, setLogoFailed] = useState(false)
 
+  const validate = () => {
+    const next = {}
+    if (!fullName.trim()) next.fullName = 'Full name is required.'
+    if (!email.trim()) {
+      next.email = 'Email is required.'
+    } else if (!/^\S+@\S+\.\S+$/.test(email.trim())) {
+      next.email = 'Enter a valid email address.'
+    }
+    if (!password) {
+      next.password = 'Password is required.'
+    } else if (password.length < 6) {
+      next.password = 'Password must be at least 6 characters.'
+    }
+    if (!confirmPassword) {
+      next.confirmPassword = 'Confirm password is required.'
+    } else if (password !== confirmPassword) {
+      next.confirmPassword = 'Passwords do not match.'
+    }
+    setFieldErrors(next)
+    return Object.keys(next).length === 0
+  }
+
   const submit = async (e) => {
     e.preventDefault()
-    if (password !== confirmPassword) {
-      setError('Passwords do not match')
-      return
-    }
-    if (password.length < 6) {
-      setError('Password must be at least 6 characters')
+    setError('')
+    if (!validate()) {
+      setError('Please fix the highlighted fields.')
       return
     }
     setLoading(true)
-    setError('')
     try {
       const resp = await authService.signup({ full_name: fullName, email, password })
       if (resp?.data?.id) {
@@ -34,7 +53,14 @@ export default function Signup({ onSignup, switchToLogin }) {
         setError('Signup failed')
       }
     } catch (err) {
-      setError(err.response?.data?.detail || err.message || 'Signup failed')
+      const detail = err.response?.data?.detail
+      if (detail === 'This email is already registered.') {
+        setError('This email is already registered.')
+      } else if (err.code === 'ERR_NETWORK' || err.message === 'Network Error') {
+        setError('Cannot connect to server. Please make sure the backend is running.')
+      } else {
+        setError(detail || 'Signup failed')
+      }
     } finally {
       setLoading(false)
     }
@@ -80,20 +106,30 @@ export default function Signup({ onSignup, switchToLogin }) {
                 <input
                   type="text"
                   value={fullName}
-                  onChange={e => setFullName(e.target.value)}
+                  onChange={e => {
+                    setFullName(e.target.value)
+                    setFieldErrors(prev => ({ ...prev, fullName: '' }))
+                    if (error) setError('')
+                  }}
                   placeholder="John Smith"
                   required
                 />
+                {fieldErrors.fullName && <div className="auth-field-error">{fieldErrors.fullName}</div>}
               </div>
               <div className="auth-field">
                 <label>Email address</label>
                 <input
                   type="email"
                   value={email}
-                  onChange={e => setEmail(e.target.value)}
+                  onChange={e => {
+                    setEmail(e.target.value)
+                    setFieldErrors(prev => ({ ...prev, email: '' }))
+                    if (error) setError('')
+                  }}
                   placeholder="you@company.com"
                   required
                 />
+                {fieldErrors.email && <div className="auth-field-error">{fieldErrors.email}</div>}
               </div>
               <div className="auth-field">
                 <label>Password</label>
@@ -101,7 +137,11 @@ export default function Signup({ onSignup, switchToLogin }) {
                   <input
                     type={showPassword ? 'text' : 'password'}
                     value={password}
-                    onChange={e => setPassword(e.target.value)}
+                    onChange={e => {
+                      setPassword(e.target.value)
+                      setFieldErrors(prev => ({ ...prev, password: '' }))
+                      if (error) setError('')
+                    }}
                     placeholder="••••••••"
                     required
                   />
@@ -112,16 +152,22 @@ export default function Signup({ onSignup, switchToLogin }) {
                     tabIndex={-1}
                   >{showPassword ? '🙈' : '👁️'}</button>
                 </div>
+                {fieldErrors.password && <div className="auth-field-error">{fieldErrors.password}</div>}
               </div>
               <div className="auth-field">
                 <label>Confirm Password</label>
                 <input
                   type="password"
                   value={confirmPassword}
-                  onChange={e => setConfirmPassword(e.target.value)}
+                  onChange={e => {
+                    setConfirmPassword(e.target.value)
+                    setFieldErrors(prev => ({ ...prev, confirmPassword: '' }))
+                    if (error) setError('')
+                  }}
                   placeholder="••••••••"
                   required
                 />
+                {fieldErrors.confirmPassword && <div className="auth-field-error">{fieldErrors.confirmPassword}</div>}
               </div>
               <button className="auth-submit-btn" type="submit" disabled={loading}>
                 {loading ? 'Creating account…' : 'Create Account'}

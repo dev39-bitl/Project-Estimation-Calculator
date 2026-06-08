@@ -265,6 +265,7 @@ class Estimate(EstimateBase):
     last_change_comment: Optional[str] = None
     files: List['EstimateFile'] = []
     comments: List['EstimateComment'] = []
+    versions: List['EstimateVersion'] = []
     comment_count: Optional[int] = 0
     unread_comment_count: Optional[int] = 0
 
@@ -279,6 +280,20 @@ class EstimateCommentCreate(BaseModel):
 
 class EstimateStatusUpdate(BaseModel):
     status: str
+
+
+# ===== Estimate Version Schema =====
+class EstimateVersion(BaseModel):
+    id: int
+    version_number: int
+    last_change_comment: str
+    created_by_name: Optional[str] = None
+    created_by_email: Optional[str] = None
+    created_at: datetime
+    estimate_data_json: Optional[Dict[str, Any]] = None
+
+    class Config:
+        from_attributes = True
 
 
 class EstimateFile(BaseModel):

@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { adminAPI } from '../../services/adminApi'
+import { exportEstimatePDF } from '../../utils/pdfExport'
+import brainiumLogo from '../../assets/brainium-logo.png'
 
 const PROJECT_STATUSES = [
   'Estimation Initiation',
@@ -123,7 +125,7 @@ export default function AdminEstimateDetails({ id, onDeleted, onBack }) {
   }
 
   const handleExportPdf = () => {
-    window.print()
+    exportEstimatePDF(estimate, brainiumLogo)
   }
 
   return (
@@ -264,6 +266,35 @@ export default function AdminEstimateDetails({ id, onDeleted, onBack }) {
             <h4 className="ap-card-title">Proposal Summary</h4>
           </div>
           <p className="ap-proposal-text">{estimate.proposal_summary}</p>
+        </div>
+      )}
+
+      {(estimate.versions || []).length > 0 && (
+        <div className="ap-card">
+          <div className="ap-card-header">
+            <h4 className="ap-card-title">Version History</h4>
+            <span className="ap-badge ap-badge--gray">{estimate.versions.length} version{estimate.versions.length !== 1 ? 's' : ''}</span>
+          </div>
+          <div className="ap-version-list">
+            {[...estimate.versions].sort((a, b) => b.version_number - a.version_number).map(v => (
+              <div key={v.id} className="ap-version-item">
+                <div className="ap-version-header">
+                  <span className="ap-badge ap-badge--gray">v{v.version_number}</span>
+                  <strong className="ap-version-author">{v.created_by_name || 'Unknown'}</strong>
+                  <span className="ap-td-muted" style={{ marginLeft: 8 }}>{new Date(v.created_at).toLocaleString()}</span>
+                </div>
+                <p className="ap-comment-text" style={{ marginTop: 4 }}>{v.last_change_comment}</p>
+                {v.estimate_data_json && (
+                  <div className="ap-version-snapshot">
+                    {v.estimate_data_json.total_estimated_hours != null &&
+                      <span className="ap-version-snap-item">⏱ {Number(v.estimate_data_json.total_estimated_hours).toFixed(1)}h</span>}
+                    {v.estimate_data_json.total_fixed_cost != null &&
+                      <span className="ap-version-snap-item">💰 ${Number(v.estimate_data_json.total_fixed_cost).toLocaleString()}</span>}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
         </div>
       )}
 

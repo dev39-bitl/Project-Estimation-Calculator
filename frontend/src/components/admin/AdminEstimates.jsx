@@ -35,8 +35,6 @@ export default function AdminEstimates({ onView, onDeleted }) {
   const [dateFilter, setDateFilter] = useState('all')
   const [sortConfig, setSortConfig] = useState({ key: 'updated_at', direction: 'desc' })
 
-  const [statusById, setStatusById] = useState({})
-  const [savingStatusId, setSavingStatusId] = useState(null)
 
   const load = () => {
     setLoading(true)
@@ -45,11 +43,6 @@ export default function AdminEstimates({ onView, onDeleted }) {
         const items = r.data || []
         setEstimates(items)
         setSelectedIds([])
-        const statusMap = {}
-        items.forEach(item => {
-          statusMap[item.id] = item.status || 'Estimation Initiation'
-        })
-        setStatusById(statusMap)
       })
       .catch(() => setError('Failed to load estimates'))
       .finally(() => setLoading(false))
@@ -158,21 +151,6 @@ export default function AdminEstimates({ onView, onDeleted }) {
     }
   }
 
-  const handleStatusUpdate = async (estimate) => {
-    const nextStatus = statusById[estimate.id] || estimate.status || 'Estimation Initiation'
-    if (nextStatus === (estimate.status || 'Estimation Initiation')) return
-    setSavingStatusId(estimate.id)
-    try {
-      await adminAPI.updateEstimateStatus(estimate.id, nextStatus)
-      setActionMsg(`Estimate #${estimate.id} status updated to "${nextStatus}".`)
-      load()
-    } catch (err) {
-      setActionMsg(err.response?.data?.detail?.message || err.response?.data?.detail || 'Status update failed.')
-    } finally {
-      setSavingStatusId(null)
-    }
-  }
-
   const toggleSelect = (id) => {
     setSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])
   }
@@ -270,6 +248,7 @@ export default function AdminEstimates({ onView, onDeleted }) {
                 <th className="ap-sortable" onClick={() => toggleSort('final_cost')}>Final Fixed Cost{sortIndicator('final_cost')}</th>
                 <th>Version</th>
                 <th className="ap-sortable" onClick={() => toggleSort('status')}>Project Status{sortIndicator('status')}</th>
+                <th>Comments</th>
                 <th className="ap-sortable" onClick={() => toggleSort('editable')}>Editable / Locked{sortIndicator('editable')}</th>
                 <th className="ap-sortable" onClick={() => toggleSort('updated_at')}>Updated Date{sortIndicator('updated_at')}</th>
                 <th>Actions</th>
@@ -294,26 +273,14 @@ export default function AdminEstimates({ onView, onDeleted }) {
                   <td className="ap-td-value">${Number(e.total_fixed_cost || 0).toLocaleString()}</td>
                   <td><span className="ap-badge ap-badge--gray">v{e.version_number || 1}</span></td>
                   <td>
-                    <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-                      <span className={`ap-badge ap-badge--status ${statusClass(e.status || 'Estimation Initiation')}`}>
-                        {e.status || 'Estimation Initiation'}
-                      </span>
-                      <select
-                        value={statusById[e.id] || e.status || 'Estimation Initiation'}
-                        onChange={evt => setStatusById(prev => ({ ...prev, [e.id]: evt.target.value }))}
-                      >
-                        {PROJECT_STATUSES.map(status => (
-                          <option key={status} value={status}>{status}</option>
-                        ))}
-                      </select>
-                      <button
-                        className="ap-btn ap-btn--sm ap-btn--primary"
-                        onClick={() => handleStatusUpdate(e)}
-                        disabled={savingStatusId === e.id || (statusById[e.id] || e.status || 'Estimation Initiation') === (e.status || 'Estimation Initiation')}
-                      >
-                        {savingStatusId === e.id ? 'Saving...' : 'Update'}
-                      </button>
-                    </div>
+                    <span className={`ap-badge ap-badge--status ${statusClass(e.status || 'Estimation Initiation')}`}>
+                      {e.status || 'Estimation Initiation'}
+                    </span>
+                  </td>
+                  <td>
+                    {(e.comments || []).length > 0
+                      ? <span className="ap-comment-count" title="Admin comments">💬 {(e.comments || []).length}</span>
+                      : <span className="ap-td-muted">—</span>}
                   </td>
                   <td>
                     <span className={`ap-badge ${e.is_editable !== false ? 'ap-badge--green' : 'ap-badge--orange'}`}>
@@ -323,12 +290,12 @@ export default function AdminEstimates({ onView, onDeleted }) {
                   <td className="ap-td-muted">{e.updated_at ? new Date(e.updated_at).toLocaleDateString() : '-'}</td>
                   <td>
                     <div className="ap-row-actions">
-                      <button className="ap-btn ap-btn--sm ap-btn--view" title="View estimate" onClick={() => onView && onView(e.id)}>View</button>
+                      <button className="ap-btn ap-btn--sm ap-btn--view" title="View estimate" onClick={() => onView && onView(e.id)}>👁️ View</button>
                       {e.is_editable !== false
-                        ? <button className="ap-btn ap-btn--sm ap-btn--warning" title="Lock editing" onClick={() => handleLock(e.id)}>Lock</button>
-                        : <button className="ap-btn ap-btn--sm ap-btn--success" title="Unlock editing" onClick={() => handleUnlock(e.id)}>Unlock</button>
+                        ? <button className="ap-btn ap-btn--sm ap-btn--warning" title="Lock editing" onClick={() => handleLock(e.id)}>🔒 Lock</button>
+                        : <button className="ap-btn ap-btn--sm ap-btn--success" title="Unlock editing" onClick={() => handleUnlock(e.id)}>🔓 Unlock</button>
                       }
-                      <button className="ap-btn ap-btn--sm ap-btn--danger" title="Delete estimate" onClick={() => handleDelete(e)}>Delete</button>
+                      <button className="ap-btn ap-btn--sm ap-btn--danger" title="Delete estimate" onClick={() => handleDelete(e)}>🗑️</button>
                     </div>
                   </td>
                 </tr>
