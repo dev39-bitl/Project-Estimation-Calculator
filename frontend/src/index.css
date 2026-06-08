@@ -3590,3 +3590,147 @@ body {
   margin-bottom: 10px;
 }
 
+/* ========================================================
+   FINAL UI FIXES — LOGO VISIBILITY + ADMIN WIDTH LAYOUT
+   ======================================================== */
+
+.auth-brand-logo-wrap,
+.logo-wrap {
+  background: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 16px;
+  padding: 10px 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: fit-content;
+  box-shadow: 0 16px 40px rgba(0, 174, 239, 0.12);
+}
+
+.auth-brand-logo-wrap img,
+.logo-wrap img {
+  max-height: 46px;
+  max-width: 210px;
+  height: auto;
+  width: auto;
+  object-fit: contain;
+  display: block;
+}
+
+.auth-brand-text-fallback,
+.brand-logo-fallback,
+.ap-logo-fallback {
+  color: #0f172a;
+}
+
+/* Keep admin/app logos crisp and visible in white capsule wrappers */
+.ap-logo-wrap {
+  background: #ffffff;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 12px;
+  padding: 6px 12px;
+  box-shadow: 0 8px 22px rgba(0, 174, 239, 0.08);
+}
+
+.ap-logo-wrap img {
+  max-height: 30px;
+  max-width: 170px;
+  object-fit: contain;
+}
+
+/* Break out from global body padding so admin fills full viewport width */
+.ap-root {
+  width: 100vw;
+  margin-left: calc(50% - 50vw);
+  margin-right: calc(50% - 50vw);
+  min-height: 100vh;
+  background: #eef3f8;
+  overflow-x: hidden;
+}
+
+.ap-navbar {
+  width: 100%;
+  padding: 0 28px;
+}
+
+.ap-body {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  width: 100%;
+  overflow: hidden;
+}
+
+.ap-sidebar {
+  width: 240px;
+  min-width: 240px;
+}
+
+.ap-main {
+  width: 100%;
+  min-width: 0;
+  padding: 28px;
+  overflow: auto;
+}
+
+.ap-content,
+.ap-dashboard,
+.ap-detail {
+  width: 100%;
+  max-width: none;
+  margin: 0;
+}
+
+.ap-card {
+  width: 100%;
+}
+
+.ap-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+}
+
+/* Estimate details should use available width with clean action row wrapping */
+.ap-detail {
+  gap: 18px;
+}
+
+.ap-header-top {
+  align-items: flex-start;
+}
+
+.ap-action-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: nowrap;
+}
+
+.ap-module-block .ap-table {
+  width: 100%;
+  min-width: 760px;
+}
+
+@media (max-width: 900px) {
+  .ap-body {
+    grid-template-columns: 1fr;
+  }
+
+  .ap-main {
+    padding: 16px;
+  }
+
+  .ap-content,
+  .ap-dashboard,
+  .ap-detail {
+    max-width: none;
+  }
+
+  .ap-action-bar {
+    flex-wrap: wrap;
+  }
+
+  .ap-navbar {
+    padding: 0 16px;
+  }
+}
+

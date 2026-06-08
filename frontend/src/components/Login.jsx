@@ -46,7 +46,7 @@ export default function Login({ onLogin, switchToSignup, switchToAdminLogin }) {
     <div className="auth-root">
       <div className="auth-container">
         <div className="auth-brand-panel">
-          <div className="auth-brand-logo">
+          <div className="auth-brand-logo auth-brand-logo-wrap">
             {!logoFailed && (
               <img
                 src={brainiumLogo}

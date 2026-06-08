@@ -520,26 +520,30 @@ function App() {
     setActiveStep(4)
   }
 
+  if (currentUser && currentUser.role === 'admin') {
+    return <AdminPanel user={currentUser} onLogout={handleLogout} />
+  }
+
+  if (!currentUser && authView === 'admin-login') {
+    return <AdminLogin onLogin={handleLogin} switchToUserLogin={() => setAuthView('login')} />
+  }
+
+  if (!currentUser && authView === 'login') {
+    return (
+      <Login
+        onLogin={handleLogin}
+        switchToSignup={() => setAuthView('signup')}
+        switchToAdminLogin={() => setAuthView('admin-login')}
+      />
+    )
+  }
+
+  if (!currentUser && authView === 'signup') {
+    return <Signup onSignup={handleLogin} switchToLogin={() => setAuthView('login')} />
+  }
+
   return (
     <div className="dashboard-root">
-      {!currentUser && authView === 'admin-login' && (
-        <AdminLogin onLogin={handleLogin} switchToUserLogin={() => setAuthView('login')} />
-      )}
-      {!currentUser && authView === 'login' && (
-        <Login
-          onLogin={handleLogin}
-          switchToSignup={() => setAuthView('signup')}
-          switchToAdminLogin={() => setAuthView('admin-login')}
-        />
-      )}
-      {!currentUser && authView === 'signup' && (
-        <Signup onSignup={handleLogin} switchToLogin={() => setAuthView('login')} />
-      )}
-
-      {currentUser && currentUser.role === 'admin' && (
-        <AdminPanel user={currentUser} onLogout={handleLogout} />
-      )}
-
       {currentUser && currentUser.role !== 'admin' && (
         <>
           <header className="dashboard-header">

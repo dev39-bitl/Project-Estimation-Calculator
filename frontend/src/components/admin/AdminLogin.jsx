@@ -33,7 +33,7 @@ export default function AdminLogin({ onLogin, switchToUserLogin }) {
     <div className="auth-root">
       <div className="auth-container">
         <div className="auth-brand-panel auth-brand-panel--admin">
-          <div className="auth-brand-logo">
+          <div className="auth-brand-logo auth-brand-logo-wrap">
             <img
               src="/src/assets/brainium-logo.png"
               alt="Brainium"

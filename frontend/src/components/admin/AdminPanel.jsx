@@ -42,7 +42,7 @@ export default function AdminPanel({ user, onLogout }) {
       <header className="ap-navbar">
         <div className="ap-navbar-left">
           <button className="ap-menu-btn" onClick={() => setSidebarOpen(v => !v)} aria-label="Toggle menu">☰</button>
-          <div className="ap-logo">
+          <div className="ap-logo ap-logo-wrap">
             <img
               src="/src/assets/brainium-logo.png"
               alt="Brainium"
