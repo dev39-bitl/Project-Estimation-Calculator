@@ -1,0 +1,116 @@
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+import os
+from dotenv import load_dotenv
+
+from .database import engine, Base, SessionLocal, migrate_sqlite_schema
+from .routes import estimates, auth, admin
+from . import models, crud
+
+load_dotenv()
+
+# Create database tables
+Base.metadata.create_all(bind=engine)
+
+# Initialize FastAPI app
+app = FastAPI(
+    title="Project Estimation Calculator API",
+    description="Fixed-cost project estimation tool with feature-based calculation and role-based internal rates",
+    version="2.0.0",
+)
+
+# Configure CORS for frontend communication
+CORS_ORIGINS = [
+    "http://localhost:5173",  # Vite dev server default port
+    "http://localhost:5174",  # Vite dev server alternative port
+    "http://localhost:5175",  # Vite dev server if ports are busy
+    "http://localhost:5176",  # Vite dev server if more ports are busy
+    "http://localhost:3000",  # Alternative frontend port
+    "http://127.0.0.1:5173",
+    "http://127.0.0.1:5174",
+    "http://127.0.0.1:5175",
+    "http://127.0.0.1:5176",
+    "http://127.0.0.1:3000",
+]
+
+if os.getenv("ENVIRONMENT") == "production":
+    CORS_ORIGINS = [
+        "https://yourdomain.com",  # Add your production domain
+    ]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=CORS_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Include routes
+app.include_router(estimates.router)
+app.include_router(auth.router)
+app.include_router(admin.router)
+
+
+@app.on_event("startup")
+def startup_event():
+    """Initialize default rate cards and tech stacks on startup"""
+    # 1. create all ORM tables first
+    Base.metadata.create_all(bind=engine)
+    # 2. add any new SQLite columns introduced after initial table creation
+    migrate_sqlite_schema()
+    db = SessionLocal()
+    try:
+        crud.get_or_create_default_rate_cards(db)
+        crud.get_or_create_default_tech_stacks(db)
+        # ensure default admin exists and always has the current hash scheme
+        from .auth import get_password_hash
+        admin_user = db.query(models.User).filter(models.User.email == 'admin@brainium.local').first()
+        if not admin_user:
+            admin_obj = models.User(
+                full_name='Admin',
+                email='admin@brainium.local',
+                hashed_password=get_password_hash('Admin@123'),
+                role='admin',
+                is_active=True,
+            )
+            db.add(admin_obj)
+            db.commit()
+            db.refresh(admin_obj)
+            print("[startup] Default admin created: admin@brainium.local / Admin@123")
+        else:
+            # Re-hash with current scheme in case the stored hash is from old bcrypt
+            new_hash = get_password_hash('Admin@123')
+            if admin_user.hashed_password != new_hash:
+                admin_user.hashed_password = new_hash
+                db.commit()
+                print("[startup] Admin password hash refreshed to SHA-256")
+    finally:
+        db.close()
+
+
+@app.get("/")
+def root():
+    """Welcome endpoint"""
+    return {
+        "message": "Project Estimation Calculator API v2.0",
+        "mode": "Fixed-Cost Estimation with Feature-Based Calculation",
+        "docs": "/docs",
+        "openapi_schema": "/openapi.json"
+    }
+
+
+@app.get("/health")
+def health_check():
+    """Health check endpoint"""
+    return {"status": "healthy", "version": "2.0", "mode": "fixed-cost-estimation"}
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(
+        app,
+        host=os.getenv("API_HOST", "0.0.0.0"),
+        port=int(os.getenv("API_PORT", 8000)),
+        reload=os.getenv("API_RELOAD", "true").lower() == "true"
+    )
