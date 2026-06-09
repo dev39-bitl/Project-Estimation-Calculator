@@ -27,7 +27,10 @@ api.interceptors.response.use(
       data: err.response?.data,
     })
 
-    if (err.response && err.response.status === 401) {
+    const requestUrl = String(err.config?.url || '')
+    const isAuthRoute = requestUrl.includes('/auth/login') || requestUrl.includes('/auth/signup')
+
+    if (err.response && err.response.status === 401 && !isAuthRoute) {
       localStorage.removeItem('access_token')
       localStorage.removeItem('current_user')
       window.location.href = '/'
@@ -77,6 +80,32 @@ export const estimateAPI = {
     } catch (err) {
       console.error('[Estimate API] update error status:', err.response?.status)
       console.error('[Estimate API] update error body:', err.response?.data)
+      throw err
+    }
+  },
+  createDraft: async (data) => {
+    const url = `${API_BASE_URL}/estimates/draft`
+    console.log('[Estimate API] POST', url)
+    try {
+      const res = await api.post('/estimates/draft', data)
+      console.log('[Estimate API] draft create status:', res.status)
+      return res
+    } catch (err) {
+      console.error('[Estimate API] draft create error status:', err.response?.status)
+      console.error('[Estimate API] draft create error body:', err.response?.data)
+      throw err
+    }
+  },
+  updateDraft: async (id, data) => {
+    const url = `${API_BASE_URL}/estimates/${id}/draft`
+    console.log('[Estimate API] PUT', url)
+    try {
+      const res = await api.put(`/estimates/${id}/draft`, data)
+      console.log('[Estimate API] draft update status:', res.status)
+      return res
+    } catch (err) {
+      console.error('[Estimate API] draft update error status:', err.response?.status)
+      console.error('[Estimate API] draft update error body:', err.response?.data)
       throw err
     }
   },

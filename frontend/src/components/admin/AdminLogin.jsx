@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
 import { authService, saveAuth } from '../../services/auth'
+import brainiumLogo from '../../assets/brainium-logo.png'
 
 export default function AdminLogin({ onLogin, switchToUserLogin }) {
   const [email, setEmail] = useState('')
@@ -35,9 +36,9 @@ export default function AdminLogin({ onLogin, switchToUserLogin }) {
         <div className="auth-brand-panel auth-brand-panel--admin">
           <div className="auth-brand-logo auth-brand-logo-wrap">
             <img
-              src="/src/assets/brainium-logo.png"
+              src={brainiumLogo}
               alt="Brainium"
-              onError={e => { e.target.style.display = 'none'; e.target.nextElementSibling.style.display = 'block' }}
+              onError={e => { e.target.style.display = 'none'; e.target.nextElementSibling.style.display = 'inline-flex' }}
             />
             <span className="auth-brand-text-fallback">Brainium</span>
           </div>

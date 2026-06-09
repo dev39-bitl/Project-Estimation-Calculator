@@ -5,6 +5,7 @@ Supports legacy estimates and new feature-based fixed-cost estimation.
 
 from sqlalchemy.orm import Session
 from typing import Any
+from datetime import datetime, timezone
 from . import models, schemas, calculator
 
 
@@ -261,6 +262,117 @@ def create_estimate_fixed_cost(db: Session, estimate: schemas.EstimateCreateFixe
     return db_estimate
 
 
+def create_estimate_draft(db: Session, estimate: schemas.EstimateCreateFixedCost, user: models.User | None = None) -> models.Estimate:
+    """Create a database-backed draft estimate without creating version history."""
+    get_or_create_default_rate_cards(db)
+    get_or_create_default_tech_stacks(db)
+
+    def complexity_multiplier(value: Any) -> float:
+        if isinstance(value, (int, float)):
+            return float(value)
+        label = str(value or "medium").strip().lower()
+        if label == "low":
+            return 1.0
+        if label == "high":
+            return 2.0
+        return 1.5
+
+    settings_obj = estimate.settings or schemas.EstimateSettingsCreate()
+    hourly_rate = float((estimate.project_info or {}).get("hourlyRate", 20) or 20)
+
+    subtotal_hours = 0.0
+    subtotal_cost = 0.0
+    for module_data in estimate.modules or []:
+        for feature_data in module_data.features or []:
+            estimated_hours = float(feature_data.estimated_hours or feature_data.base_hours or 0)
+            multiplier = complexity_multiplier(feature_data.complexity)
+            feature_hours = estimated_hours * multiplier
+            subtotal_hours += feature_hours
+            if feature_data.is_billable:
+                subtotal_cost += feature_hours * hourly_rate
+
+    qa_hours = subtotal_hours * (float(settings_obj.qa_percentage or 15) / 100)
+    pm_hours = subtotal_hours * (float(settings_obj.pm_percentage or 10) / 100)
+    risk_hours = subtotal_hours * (float(settings_obj.risk_percentage or 10) / 100)
+
+    qa_cost = qa_hours * hourly_rate
+    pm_cost = pm_hours * hourly_rate
+    risk_cost = risk_hours * hourly_rate
+
+    total_hours = subtotal_hours + qa_hours + pm_hours + risk_hours
+    final_cost = subtotal_cost + qa_cost + pm_cost + risk_cost
+
+    project_info = estimate.project_info or {}
+    tech_stack = estimate.tech_stack_json or {}
+    payload_snapshot = estimate.estimate_data_json or estimate.model_dump()
+
+    db_estimate = models.Estimate(
+        name=estimate.name,
+        project_name=estimate.name,
+        description=estimate.description,
+        client_name=estimate.client_name,
+        project_type=(project_info.get("projectType") if isinstance(project_info, dict) else None),
+        primary_technology=(tech_stack.get("primary") if isinstance(tech_stack, dict) else None),
+        tech_stack_json=estimate.tech_stack_json,
+        project_info=estimate.project_info,
+        is_fixed_cost=True,
+        estimate_data_json=payload_snapshot,
+        currency=estimate.currency or (project_info.get('currency') if isinstance(project_info, dict) else 'USD') or 'USD',
+        proposal_summary=estimate.proposal_summary,
+        subtotal_hours=subtotal_hours,
+        qa_hours=qa_hours,
+        pm_hours=pm_hours,
+        risk_buffer_hours=risk_hours,
+        total_estimated_hours=total_hours,
+        subtotal_cost=subtotal_cost,
+        qa_cost=qa_cost,
+        pm_cost=pm_cost,
+        risk_buffer_cost=risk_cost,
+        total_fixed_cost=final_cost,
+        final_fixed_cost=final_cost,
+        created_by_user_id=(user.id if user else None),
+        created_by_name=(user.full_name if user else None),
+        created_by_email=(user.email if user else None),
+        version_number=estimate.version_number or 1,
+        is_editable=True,
+        status='Draft',
+        is_draft=True,
+        auto_saved_at=datetime.now(timezone.utc),
+        last_change_comment=None,
+    )
+    db.add(db_estimate)
+    db.flush()
+
+    db_settings = models.EstimateSettings(estimate_id=db_estimate.id, **settings_obj.model_dump())
+    db.add(db_settings)
+
+    for module_data in estimate.modules or []:
+        db_module = models.Module(estimate_id=db_estimate.id, **module_data.model_dump(exclude={"features"}))
+        db.add(db_module)
+        db.flush()
+
+        for feature_data in module_data.features or []:
+            numeric_complexity = complexity_multiplier(feature_data.complexity)
+            base_hours = float(feature_data.estimated_hours or feature_data.base_hours or 0)
+            db_feature = models.Feature(
+                module_id=db_module.id,
+                name=feature_data.name,
+                feature_type=feature_data.feature_type,
+                complexity=numeric_complexity,
+                base_hours=base_hours,
+                quantity=1.0,
+                assigned_role=feature_data.assigned_role or 'Estimator',
+                is_billable=feature_data.is_billable,
+                notes=feature_data.description or feature_data.notes,
+                order=feature_data.order,
+            )
+            db.add(db_feature)
+
+    db.commit()
+    db.refresh(db_estimate)
+    return db_estimate
+
+
 def get_user_by_email(db: Session, email: str) -> models.User:
     return db.query(models.User).filter(models.User.email == email).first()
 
@@ -323,12 +435,13 @@ def update_estimate_fixed_cost(
     estimate_id: int,
     estimate: schemas.EstimateCreateFixedCost,
     user: models.User | None = None,
+    require_change_comment: bool = True,
 ) -> models.Estimate:
     db_estimate = get_estimate(db, estimate_id)
     if not db_estimate:
         return None
 
-    if not estimate.last_change_comment or not estimate.last_change_comment.strip():
+    if require_change_comment and (not estimate.last_change_comment or not estimate.last_change_comment.strip()):
         raise ValueError('Change comment is required when updating an existing estimate.')
 
     def complexity_multiplier(value: Any) -> float:
@@ -406,9 +519,11 @@ def update_estimate_fixed_cost(
     db_estimate.final_fixed_cost = final_cost
 
     db_estimate.status = estimate.status or db_estimate.status or 'Estimation Initiation'
+    db_estimate.is_draft = False
+    db_estimate.auto_saved_at = None
     db_estimate.is_editable = db_estimate.is_editable if estimate.is_editable is None else estimate.is_editable
     db_estimate.last_change_comment = estimate.last_change_comment
-    db_estimate.version_number = current_version + 1
+    db_estimate.version_number = current_version + 1 if require_change_comment else current_version
 
     # Recreate settings
     db_settings = models.EstimateSettings(estimate_id=estimate_id, **settings_obj.model_dump())
@@ -437,17 +552,139 @@ def update_estimate_fixed_cost(
             )
             db.add(db_feature)
 
-    db_version = models.EstimateVersion(
-        estimate_id=estimate_id,
-        version_number=db_estimate.version_number,
-        last_change_comment=estimate.last_change_comment,
-        estimate_data_json=payload_snapshot,
-        proposal_summary=estimate.proposal_summary,
-        created_by_user_id=(user.id if user else db_estimate.created_by_user_id),
-        created_by_name=(user.full_name if user else db_estimate.created_by_name),
-        created_by_email=(user.email if user else db_estimate.created_by_email),
-    )
-    db.add(db_version)
+    if require_change_comment:
+        db_version = models.EstimateVersion(
+            estimate_id=estimate_id,
+            version_number=db_estimate.version_number,
+            last_change_comment=estimate.last_change_comment,
+            estimate_data_json=payload_snapshot,
+            proposal_summary=estimate.proposal_summary,
+            created_by_user_id=(user.id if user else db_estimate.created_by_user_id),
+            created_by_name=(user.full_name if user else db_estimate.created_by_name),
+            created_by_email=(user.email if user else db_estimate.created_by_email),
+        )
+        db.add(db_version)
+
+    db.commit()
+    db.refresh(db_estimate)
+    return db_estimate
+
+
+def update_estimate_draft(
+    db: Session,
+    estimate_id: int,
+    estimate: schemas.EstimateCreateFixedCost,
+    user: models.User | None = None,
+) -> models.Estimate:
+    """Update an existing draft estimate in-place without version/history side effects."""
+    db_estimate = get_estimate(db, estimate_id)
+    if not db_estimate:
+        return None
+
+    def complexity_multiplier(value: Any) -> float:
+        if isinstance(value, (int, float)):
+            return float(value)
+        label = str(value or "medium").strip().lower()
+        if label == "low":
+            return 1.0
+        if label == "high":
+            return 2.0
+        return 1.5
+
+    settings_obj = estimate.settings or schemas.EstimateSettingsCreate()
+    hourly_rate = float((estimate.project_info or {}).get("hourlyRate", 20) or 20)
+
+    subtotal_hours = 0.0
+    subtotal_cost = 0.0
+    for module_data in estimate.modules or []:
+        for feature_data in module_data.features or []:
+            estimated_hours = float(feature_data.estimated_hours or feature_data.base_hours or 0)
+            multiplier = complexity_multiplier(feature_data.complexity)
+            feature_hours = estimated_hours * multiplier
+            subtotal_hours += feature_hours
+            if feature_data.is_billable:
+                subtotal_cost += feature_hours * hourly_rate
+
+    qa_hours = subtotal_hours * (float(settings_obj.qa_percentage or 15) / 100)
+    pm_hours = subtotal_hours * (float(settings_obj.pm_percentage or 10) / 100)
+    risk_hours = subtotal_hours * (float(settings_obj.risk_percentage or 10) / 100)
+
+    qa_cost = qa_hours * hourly_rate
+    pm_cost = pm_hours * hourly_rate
+    risk_cost = risk_hours * hourly_rate
+
+    total_hours = subtotal_hours + qa_hours + pm_hours + risk_hours
+    final_cost = subtotal_cost + qa_cost + pm_cost + risk_cost
+
+    project_info = estimate.project_info or {}
+    tech_stack = estimate.tech_stack_json or {}
+    payload_snapshot = estimate.estimate_data_json or estimate.model_dump()
+
+    db.query(models.Feature).filter(models.Feature.module_id.in_(
+        db.query(models.Module.id).filter(models.Module.estimate_id == estimate_id)
+    )).delete(synchronize_session=False)
+    db.query(models.Module).filter(models.Module.estimate_id == estimate_id).delete(synchronize_session=False)
+    db.query(models.EstimateSettings).filter(models.EstimateSettings.estimate_id == estimate_id).delete(synchronize_session=False)
+    db.flush()
+
+    db_estimate.name = estimate.name
+    db_estimate.project_name = estimate.name
+    db_estimate.description = estimate.description
+    db_estimate.client_name = estimate.client_name
+    db_estimate.project_type = (project_info.get("projectType") if isinstance(project_info, dict) else None)
+    db_estimate.primary_technology = (tech_stack.get("primary") if isinstance(tech_stack, dict) else None)
+    db_estimate.tech_stack_json = estimate.tech_stack_json
+    db_estimate.project_info = estimate.project_info
+    db_estimate.currency = estimate.currency or (project_info.get('currency') if isinstance(project_info, dict) else 'USD') or 'USD'
+    db_estimate.proposal_summary = estimate.proposal_summary
+    db_estimate.estimate_data_json = payload_snapshot
+
+    db_estimate.subtotal_hours = subtotal_hours
+    db_estimate.qa_hours = qa_hours
+    db_estimate.pm_hours = pm_hours
+    db_estimate.risk_buffer_hours = risk_hours
+    db_estimate.total_estimated_hours = total_hours
+    db_estimate.subtotal_cost = subtotal_cost
+    db_estimate.qa_cost = qa_cost
+    db_estimate.pm_cost = pm_cost
+    db_estimate.risk_buffer_cost = risk_cost
+    db_estimate.total_fixed_cost = final_cost
+    db_estimate.final_fixed_cost = final_cost
+
+    db_estimate.status = 'Draft'
+    db_estimate.is_draft = True
+    db_estimate.auto_saved_at = datetime.now(timezone.utc)
+    db_estimate.last_change_comment = None
+
+    if user and not db_estimate.created_by_user_id:
+        db_estimate.created_by_user_id = user.id
+        db_estimate.created_by_name = user.full_name
+        db_estimate.created_by_email = user.email
+
+    db_settings = models.EstimateSettings(estimate_id=estimate_id, **settings_obj.model_dump())
+    db.add(db_settings)
+
+    for module_data in estimate.modules or []:
+        db_module = models.Module(estimate_id=estimate_id, **module_data.model_dump(exclude={"features"}))
+        db.add(db_module)
+        db.flush()
+
+        for feature_data in module_data.features or []:
+            numeric_complexity = complexity_multiplier(feature_data.complexity)
+            base_hours = float(feature_data.estimated_hours or feature_data.base_hours or 0)
+            db_feature = models.Feature(
+                module_id=db_module.id,
+                name=feature_data.name,
+                feature_type=feature_data.feature_type,
+                complexity=numeric_complexity,
+                base_hours=base_hours,
+                quantity=1.0,
+                assigned_role=feature_data.assigned_role or 'Estimator',
+                is_billable=feature_data.is_billable,
+                notes=feature_data.description or feature_data.notes,
+                order=feature_data.order,
+            )
+            db.add(db_feature)
 
     db.commit()
     db.refresh(db_estimate)

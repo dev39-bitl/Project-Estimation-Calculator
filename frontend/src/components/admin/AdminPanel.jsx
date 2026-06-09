@@ -4,6 +4,7 @@ import AdminUsers from './AdminUsers'
 import AdminEstimates from './AdminEstimates'
 import AdminEstimateDetails from './AdminEstimateDetails'
 import AdminReports from './AdminReports'
+import brainiumLogo from '../../assets/brainium-logo.png'
 
 const NAV_ITEMS = [
   { key: 'dashboard', label: 'Dashboard', icon: '📊' },
@@ -44,9 +45,9 @@ export default function AdminPanel({ user, onLogout }) {
           <button className="ap-menu-btn" onClick={() => setSidebarOpen(v => !v)} aria-label="Toggle menu">☰</button>
           <div className="ap-logo ap-logo-wrap">
             <img
-              src="/src/assets/brainium-logo.png"
+              src={brainiumLogo}
               alt="Brainium"
-              onError={e => { e.target.style.display = 'none'; e.target.nextElementSibling.style.display = 'inline' }}
+              onError={e => { e.target.style.display = 'none'; e.target.nextElementSibling.style.display = 'inline-flex' }}
             />
             <span className="ap-logo-fallback">Brainium</span>
             <span className="ap-logo-label">Admin</span>

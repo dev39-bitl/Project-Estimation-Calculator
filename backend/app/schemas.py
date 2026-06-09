@@ -200,6 +200,7 @@ class EstimateCreateFixedCost(BaseModel):
     currency: Optional[str] = None
     version_number: Optional[int] = 1
     status: Optional[str] = "Estimation Initiation"
+    is_draft: Optional[bool] = False
     is_editable: Optional[bool] = True
     last_change_comment: Optional[str] = None
 
@@ -262,6 +263,8 @@ class Estimate(EstimateBase):
     version_number: Optional[int] = 1
     is_editable: Optional[bool] = True
     status: Optional[str] = 'Estimation Initiation'
+    is_draft: Optional[bool] = False
+    auto_saved_at: Optional[datetime] = None
     last_change_comment: Optional[str] = None
     files: List['EstimateFile'] = []
     comments: List['EstimateComment'] = []

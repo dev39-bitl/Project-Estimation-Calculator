@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react'
+import React, { useState, useCallback, useEffect, useRef } from 'react'
 import './App.css'
 import ProjectInfoSection from './components/ProjectInfoSection'
 import TechStackSection from './components/TechStackSection'
@@ -15,6 +15,7 @@ import AdminPanel from './components/admin/AdminPanel'
 import { estimateAPI } from './services/api'
 import { clearAuth } from './services/auth'
 import { API_BASE_URL } from './config/apiConfig'
+import brainiumLogo from './assets/brainium-logo.png'
 import {
   defaultProjectInfo,
   defaultTechStack,
@@ -84,6 +85,13 @@ function App() {
   const [changeComment, setChangeComment] = useState('')
   const [loadedEstimateComments, setLoadedEstimateComments] = useState([])
   const [isLoadedEstimateEditable, setIsLoadedEstimateEditable] = useState(true)
+  const [logoFailed, setLogoFailed] = useState(false)
+  const [currentDraftId, setCurrentDraftId] = useState(null)
+  const [autoSaveStatus, setAutoSaveStatus] = useState('idle')
+
+  const autoSaveTimerRef = useRef(null)
+  const lastAutoSavedPayloadRef = useRef('')
+  const autoSaveStatusTimerRef = useRef(null)
 
   const isViewMode = wizardMode === 'view'
 
@@ -168,6 +176,84 @@ function App() {
     }
   }, [internalCosts, modules])
 
+  const hasMinimumUsefulData = useCallback(() => {
+    if ((projectInfo.name || '').trim()) return true
+    if ((techStack.primary || '').trim()) return true
+
+    for (const module of modules || []) {
+      if ((module?.name || '').trim()) return true
+      for (const feature of module?.features || []) {
+        if ((feature?.name || '').trim()) return true
+        if (Number(feature?.estimatedHours || 0) > 0) return true
+      }
+    }
+    return false
+  }, [projectInfo.name, techStack.primary, modules])
+
+  const buildEstimatePayload = useCallback(() => ({
+    name: projectInfo.name || 'Untitled Estimate',
+    description: projectInfo.description || '',
+    client_name: projectInfo.clientName || '',
+    tech_stack_json: {
+      primary: techStack.primary || '',
+      frontend: techStack.frontend || '',
+      backend: techStack.backend || '',
+      mobile: techStack.mobile || '',
+      database: techStack.database || '',
+      platform: techStack.platform || '',
+      cloud: techStack.cloud || '',
+      ai: techStack.ai || '',
+    },
+    project_info: {
+      projectType: projectInfo.projectType || '',
+      preparedBy: 'Brainium',
+      hourlyRate: internalCosts.hourlyRate || 20,
+      currency: internalCosts.currency || 'USD',
+    },
+    modules: modules.map(m => ({
+      name: m.name || 'Untitled Module',
+      description: m.description || '',
+      features: m.features.map(f => ({
+        name: f.name || 'Untitled Feature',
+        description: f.description || '',
+        complexity: f.complexity || 'medium',
+        estimated_hours: f.estimatedHours || 0,
+        is_billable: f.isBillable !== false,
+      })),
+    })),
+    settings: {
+      qa_percentage: internalCosts.qaPercentage || 15,
+      pm_percentage: internalCosts.pmPercentage || 10,
+      risk_percentage: internalCosts.riskPercentage || 10,
+    },
+    proposal_summary: breakdown
+      ? `Fixed-cost proposal for ${projectInfo.name || 'Project'} - ${breakdown.total_hours}h - $${Number(breakdown.total_fixed_cost).toLocaleString()}`
+      : '',
+    estimate_data_json: {
+      breakdown,
+      project_info: projectInfo,
+      tech_stack: techStack,
+      modules,
+      internalCosts,
+      activeStep,
+      mode: wizardMode,
+      currentDraftId,
+    },
+    is_editable: true,
+    last_change_comment: editingEstimateId ? changeComment.trim() : undefined,
+  }), [
+    projectInfo,
+    techStack,
+    internalCosts,
+    modules,
+    breakdown,
+    activeStep,
+    wizardMode,
+    currentDraftId,
+    editingEstimateId,
+    changeComment,
+  ])
+
   const saveEstimate = async () => {
     if (isViewMode) {
       setError('View mode is read-only. Switch to edit mode to update this estimate.')
@@ -184,64 +270,19 @@ function App() {
         return
       }
 
-      const payload = {
-        name: projectInfo.name || 'Untitled Estimate',
-        description: projectInfo.description || '',
-        client_name: projectInfo.clientName || '',
-        tech_stack_json: {
-          primary: techStack.primary || '',
-          frontend: techStack.frontend || '',
-          backend: techStack.backend || '',
-          mobile: techStack.mobile || '',
-          database: techStack.database || '',
-          platform: techStack.platform || '',
-          cloud: techStack.cloud || '',
-          ai: techStack.ai || '',
-        },
-        project_info: {
-          projectType: projectInfo.projectType || '',
-          preparedBy: 'Brainium',
-          hourlyRate: internalCosts.hourlyRate || 20,
-          currency: internalCosts.currency || 'USD',
-        },
-        modules: modules.map(m => ({
-          name: m.name || 'Untitled Module',
-          description: m.description || '',
-          features: m.features.map(f => ({
-            name: f.name || 'Untitled Feature',
-            description: f.description || '',
-            complexity: f.complexity || 'medium',
-            estimated_hours: f.estimatedHours || 0,
-            is_billable: f.isBillable !== false,
-          })),
-        })),
-        settings: {
-          qa_percentage: internalCosts.qaPercentage || 15,
-          pm_percentage: internalCosts.pmPercentage || 10,
-          risk_percentage: internalCosts.riskPercentage || 10,
-        },
-        proposal_summary: breakdown
-          ? `Fixed-cost proposal for ${projectInfo.name || 'Project'} - ${breakdown.total_hours}h - $${Number(breakdown.total_fixed_cost).toLocaleString()}`
-          : '',
-        estimate_data_json: {
-          breakdown,
-          project_info: projectInfo,
-          tech_stack: techStack,
-          modules,
-          internalCosts,
-        },
-        is_editable: true,
-        last_change_comment: editingEstimateId ? changeComment.trim() : undefined,
-      }
-
-      console.log('[Save Estimate] mode:', editingEstimateId ? 'update' : 'create')
+      const payload = buildEstimatePayload()
+      const targetId = editingEstimateId || currentDraftId || null
+      console.log('[Save Estimate] mode:', targetId ? 'update' : 'create')
       console.log('[Save Estimate] payload:', payload)
-      const response = editingEstimateId
-        ? await estimateAPI.updateEstimate(editingEstimateId, payload)
+      const response = targetId
+        ? await estimateAPI.updateEstimate(targetId, payload)
         : await estimateAPI.createEstimate(payload)
 
       if (response?.data?.id) {
-        setSuccess(editingEstimateId ? 'Estimate updated successfully!' : 'Estimate saved successfully!')
+        setAutoSaveStatus('idle')
+        setCurrentDraftId(null)
+        lastAutoSavedPayloadRef.current = ''
+        setSuccess(targetId ? 'Estimate updated successfully!' : 'Estimate saved successfully!')
         setSavedKey(prev => prev + 1)
         setEstimatorView('saved')
         setWizardMode('create')
@@ -296,6 +337,9 @@ function App() {
 
     setLoadedEstimateId(estimate.id || null)
     setEditingEstimateId(estimate.id || null)
+    setCurrentDraftId(null)
+    setAutoSaveStatus('idle')
+    lastAutoSavedPayloadRef.current = ''
     setChangeComment('')
     setLoadedEstimateComments(estimate.comments || [])
     setIsLoadedEstimateEditable(estimate.is_editable !== false)
@@ -311,9 +355,16 @@ function App() {
 
     if (!editMode) {
       setEditingEstimateId(null)
+      setCurrentDraftId(null)
       setWizardMode('view')
     } else {
-      setWizardMode('edit')
+      if (estimate.is_draft || String(estimate.status || '').toLowerCase() === 'draft') {
+        setEditingEstimateId(null)
+        setCurrentDraftId(estimate.id || null)
+        setWizardMode('create')
+      } else {
+        setWizardMode('edit')
+      }
     }
 
     const normalizeComplexity = value => {
@@ -367,7 +418,8 @@ function App() {
     )
 
     setEstimatorView('wizard')
-    setActiveStep(4)
+    const restoredStep = Number(estimate.estimate_data_json?.activeStep)
+    setActiveStep(Number.isFinite(restoredStep) ? Math.max(0, Math.min(restoredStep, 4)) : 4)
     setTimeout(() => calculateBreakdown(), 100)
   }
 
@@ -402,12 +454,75 @@ function App() {
     setChangeComment('')
     setLoadedEstimateComments([])
     setIsLoadedEstimateEditable(true)
+    setCurrentDraftId(null)
+    setAutoSaveStatus('idle')
+    lastAutoSavedPayloadRef.current = ''
   }
 
   const openNewEstimateWizard = () => {
     resetEstimate()
     setEstimatorView('wizard')
   }
+
+  useEffect(() => {
+    if (!currentUser || estimatorView !== 'wizard' || isViewMode) return
+    if (saving) return
+    if (wizardMode !== 'create') return
+    if (!hasMinimumUsefulData()) return
+
+    const payload = buildEstimatePayload()
+    const serialized = JSON.stringify(payload)
+    if (serialized === lastAutoSavedPayloadRef.current) return
+
+    if (autoSaveTimerRef.current) {
+      clearTimeout(autoSaveTimerRef.current)
+    }
+
+    autoSaveTimerRef.current = setTimeout(async () => {
+      try {
+        setAutoSaveStatus('saving')
+        const response = currentDraftId
+          ? await estimateAPI.updateDraft(currentDraftId, payload)
+          : await estimateAPI.createDraft(payload)
+        const savedId = response?.data?.id
+        if (savedId && !currentDraftId) {
+          setCurrentDraftId(savedId)
+          setLoadedEstimateId(savedId)
+        }
+        lastAutoSavedPayloadRef.current = serialized
+        setAutoSaveStatus('saved')
+      } catch (err) {
+        console.error('[AutoSave Draft] failed', err)
+        setAutoSaveStatus('error')
+      }
+    }, 2000)
+
+    return () => {
+      if (autoSaveTimerRef.current) {
+        clearTimeout(autoSaveTimerRef.current)
+      }
+    }
+  }, [
+    currentUser,
+    estimatorView,
+    isViewMode,
+    saving,
+    wizardMode,
+    currentDraftId,
+    buildEstimatePayload,
+    hasMinimumUsefulData,
+  ])
+
+  useEffect(() => {
+    if (autoSaveStatus !== 'saved') return
+    if (autoSaveStatusTimerRef.current) {
+      clearTimeout(autoSaveStatusTimerRef.current)
+    }
+    autoSaveStatusTimerRef.current = setTimeout(() => setAutoSaveStatus('idle'), 2500)
+    return () => {
+      if (autoSaveStatusTimerRef.current) clearTimeout(autoSaveStatusTimerRef.current)
+    }
+  }, [autoSaveStatus])
 
   const isStepComplete = index => {
     if (index === 0) {
@@ -563,16 +678,13 @@ function App() {
             <div className="header-brand">
               <div className="brand-logo-wrap" style={{}}>
                 <img
-                  src="/src/assets/brainium-logo.png"
+                  src={brainiumLogo}
                   alt="Brainium"
                   className="brand-logo-image"
-                  onError={e => {
-                    e.currentTarget.style.display = 'none'
-                    const fallback = e.currentTarget.nextElementSibling
-                    if (fallback) fallback.style.display = 'inline-flex'
-                  }}
+                  onError={() => setLogoFailed(true)}
+                  style={{ display: logoFailed ? 'none' : 'block' }}
                 />
-                <span className="brand-logo-fallback">Brainium</span>
+                <span className="brand-logo-fallback" style={{ display: logoFailed ? 'inline-flex' : 'none' }}>Brainium</span>
               </div>
               <div>
                 <h1>Project Estimation Dashboard</h1>
@@ -613,6 +725,14 @@ function App() {
                     </button>
                   </div>
                 </div>
+
+                {!isViewMode && wizardMode === 'create' && autoSaveStatus !== 'idle' && (
+                  <div className="draft-save-status">
+                    {autoSaveStatus === 'saving' && 'Auto-saving...'}
+                    {autoSaveStatus === 'saved' && 'Draft saved'}
+                    {autoSaveStatus === 'error' && 'Auto-save failed'}
+                  </div>
+                )}
 
                 <div className="wizard-steps">
                   {WIZARD_STEPS.map((step, index) => (

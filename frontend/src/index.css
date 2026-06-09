@@ -3734,3 +3734,169 @@ body {
   }
 }
 
+/* ========================================================
+   2026 FIXES: LOGO, DRAFT AUTOSAVE, ADMIN BUTTON CONTRAST
+   ======================================================== */
+
+.auth-brand-panel,
+.header-brand,
+.dashboard-header,
+.ap-navbar,
+.ap-logo,
+.ap-logo-wrap {
+  overflow: visible !important;
+}
+
+.auth-brand-logo-wrap,
+.brand-logo-wrap,
+.ap-logo-wrap {
+  min-width: 180px !important;
+  max-width: 240px !important;
+  width: auto !important;
+  height: auto !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  background: #ffffff !important;
+  border-radius: 14px !important;
+  padding: 10px 16px !important;
+  overflow: visible !important;
+}
+
+.auth-brand-logo-wrap img,
+.brand-logo-image,
+.ap-logo-wrap img {
+  max-height: 42px !important;
+  max-width: 210px !important;
+  width: auto !important;
+  height: auto !important;
+  object-fit: contain !important;
+  display: block !important;
+}
+
+.brand-logo-fallback,
+.auth-brand-text-fallback,
+.ap-logo-fallback {
+  color: #0f172a !important;
+  font-weight: 800;
+}
+
+.draft-restore-banner {
+  margin: 8px 0 14px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(245, 158, 11, 0.45);
+  background: rgba(245, 158, 11, 0.14);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.draft-restore-text {
+  color: #ffefc7;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.draft-restore-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.draft-save-status {
+  margin: 4px 0 12px;
+  font-size: 0.84rem;
+  color: #c9d6ea;
+}
+
+.admin-btn-view {
+  background: #173B5D !important;
+  color: #FFFFFF !important;
+  border: 1px solid #2B5D86 !important;
+}
+
+.admin-btn-lock {
+  background: #7C4A03 !important;
+  color: #FFF7D6 !important;
+  border: 1px solid #F59E0B !important;
+}
+
+.admin-btn-unlock {
+  background: #065F46 !important;
+  color: #D1FAE5 !important;
+  border: 1px solid #10B981 !important;
+}
+
+.admin-btn-delete {
+  background: #7F1D1D !important;
+  color: #FEE2E2 !important;
+  border: 1px solid #EF4444 !important;
+}
+
+.admin-btn-export {
+  background: #10243A !important;
+  color: #FFFFFF !important;
+  border: 1px solid #2B4564 !important;
+}
+
+.admin-btn-back {
+  background: #334155 !important;
+  color: #F8FAFC !important;
+  border: 1px solid #475569 !important;
+}
+
+.admin-btn-view,
+.admin-btn-lock,
+.admin-btn-unlock,
+.admin-btn-delete,
+.admin-btn-export,
+.admin-btn-back {
+  border-radius: 10px !important;
+  min-height: 34px;
+}
+
+.admin-btn-view:hover,
+.admin-btn-lock:hover,
+.admin-btn-unlock:hover,
+.admin-btn-delete:hover,
+.admin-btn-export:hover,
+.admin-btn-back:hover {
+  filter: brightness(1.08);
+}
+
+.admin-btn-view:disabled,
+.admin-btn-lock:disabled,
+.admin-btn-unlock:disabled,
+.admin-btn-delete:disabled,
+.admin-btn-export:disabled,
+.admin-btn-back:disabled {
+  opacity: 0.56 !important;
+  cursor: not-allowed;
+  filter: grayscale(0.12);
+}
+
+.ap-row-actions {
+  gap: 10px !important;
+}
+
+.auth-error {
+  background: #3a1014 !important;
+  border: 1px solid #b91c1c !important;
+  color: #fee2e2 !important;
+}
+
+.auth-error-close:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+@media (max-width: 760px) {
+  .draft-restore-banner {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+

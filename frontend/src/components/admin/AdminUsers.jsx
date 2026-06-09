@@ -238,10 +238,10 @@ export default function AdminUsers() {
                     {u.role !== 'admin' && (
                       <div className="ap-row-actions">
                         {u.is_active
-                          ? <button className="ap-btn ap-btn--sm ap-btn--warning" title="Block user login" onClick={() => handleBlock(u)}>Block Login</button>
-                          : <button className="ap-btn ap-btn--sm ap-btn--success" title="Enable user login" onClick={() => handleUnblock(u)}>Enable Login</button>
+                          ? <button className="ap-btn ap-btn--sm ap-btn--warning admin-btn-lock" title="Block user login" onClick={() => handleBlock(u)}>Block Login</button>
+                          : <button className="ap-btn ap-btn--sm ap-btn--success admin-btn-unlock" title="Enable user login" onClick={() => handleUnblock(u)}>Enable Login</button>
                         }
-                        <button className="ap-btn ap-btn--sm ap-btn--danger" title="Delete user" onClick={() => handleDelete(u)}>Delete</button>
+                        <button className="ap-btn ap-btn--sm ap-btn--danger admin-btn-delete" title="Delete user" onClick={() => handleDelete(u)}>Delete</button>
                       </div>
                     )}
                     {u.role === 'admin' && <span className="ap-td-muted">-</span>}

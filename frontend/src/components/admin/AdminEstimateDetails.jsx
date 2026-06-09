@@ -151,16 +151,16 @@ export default function AdminEstimateDetails({ id, onDeleted, onBack }) {
           </div>
           <div className="ap-action-bar">
             <button
-              className={`ap-btn ap-btn--sm ${isEditable ? 'ap-btn--warning' : 'ap-btn--success'}`}
+              className={`ap-btn ap-btn--sm ${isEditable ? 'ap-btn--warning admin-btn-lock' : 'ap-btn--success admin-btn-unlock'}`}
               onClick={handleLockToggle}
               disabled={locking}
               title={isEditable ? 'Lock editing' : 'Unlock editing'}
             >
               {locking ? '...' : isEditable ? 'Lock Editing' : 'Unlock Editing'}
             </button>
-            <button className="ap-btn ap-btn--sm ap-btn--danger" onClick={handleDelete} title="Delete estimate">Delete</button>
-            <button className="ap-btn ap-btn--sm ap-btn--view" onClick={handleExportPdf} title="Export PDF">Export PDF</button>
-            <button className="ap-btn ap-btn--sm" onClick={() => onBack && onBack()} title="Back to estimates">Back to Estimates</button>
+            <button className="ap-btn ap-btn--sm ap-btn--danger admin-btn-delete" onClick={handleDelete} title="Delete estimate">Delete</button>
+            <button className="ap-btn ap-btn--sm ap-btn--view admin-btn-export" onClick={handleExportPdf} title="Export PDF">Export PDF</button>
+            <button className="ap-btn ap-btn--sm admin-btn-back" onClick={() => onBack && onBack()} title="Back to estimates">Back to Estimates</button>
           </div>
         </div>
 

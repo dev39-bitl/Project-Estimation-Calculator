@@ -290,12 +290,12 @@ export default function AdminEstimates({ onView, onDeleted }) {
                   <td className="ap-td-muted">{e.updated_at ? new Date(e.updated_at).toLocaleDateString() : '-'}</td>
                   <td>
                     <div className="ap-row-actions">
-                      <button className="ap-btn ap-btn--sm ap-btn--view" title="View estimate" onClick={() => onView && onView(e.id)}>👁️ View</button>
+                      <button className="ap-btn ap-btn--sm ap-btn--view admin-btn-view" title="View estimate" onClick={() => onView && onView(e.id)}>👁️ View</button>
                       {e.is_editable !== false
-                        ? <button className="ap-btn ap-btn--sm ap-btn--warning" title="Lock editing" onClick={() => handleLock(e.id)}>🔒 Lock</button>
-                        : <button className="ap-btn ap-btn--sm ap-btn--success" title="Unlock editing" onClick={() => handleUnlock(e.id)}>🔓 Unlock</button>
+                        ? <button className="ap-btn ap-btn--sm ap-btn--warning admin-btn-lock" title="Lock editing" onClick={() => handleLock(e.id)}>🔒 Lock</button>
+                        : <button className="ap-btn ap-btn--sm ap-btn--success admin-btn-unlock" title="Unlock editing" onClick={() => handleUnlock(e.id)}>🔓 Unlock</button>
                       }
-                      <button className="ap-btn ap-btn--sm ap-btn--danger" title="Delete estimate" onClick={() => handleDelete(e)}>🗑️</button>
+                      <button className="ap-btn ap-btn--sm ap-btn--danger admin-btn-delete" title="Delete estimate" onClick={() => handleDelete(e)}>🗑️</button>
                     </div>
                   </td>
                 </tr>

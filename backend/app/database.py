@@ -47,6 +47,8 @@ def migrate_sqlite_schema():
         "version_number": "INTEGER DEFAULT 1",
         "is_editable": "BOOLEAN DEFAULT 1",
         "status": "VARCHAR(50) DEFAULT 'Estimation Initiation'",
+        "is_draft": "BOOLEAN DEFAULT 0",
+        "auto_saved_at": "DATETIME",
         "last_change_comment": "TEXT",
     }
 

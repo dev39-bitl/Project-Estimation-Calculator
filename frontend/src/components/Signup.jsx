@@ -37,11 +37,11 @@ export default function Signup({ onSignup, switchToLogin }) {
 
   const submit = async (e) => {
     e.preventDefault()
-    setError('')
     if (!validate()) {
       setError('Please fix the highlighted fields.')
       return
     }
+    setError('')
     setLoading(true)
     try {
       const resp = await authService.signup({ full_name: fullName, email, password })

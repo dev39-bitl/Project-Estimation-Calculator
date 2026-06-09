@@ -10,6 +10,37 @@ from pydantic import ValidationError
 router = APIRouter(prefix="/api", tags=["estimates"])
 
 
+def _has_minimum_draft_data(payload: dict) -> bool:
+    if not isinstance(payload, dict):
+        return False
+    name = str(payload.get('name') or '').strip()
+    if name:
+        return True
+
+    tech = payload.get('tech_stack_json') or {}
+    if isinstance(tech, dict) and str(tech.get('primary') or '').strip():
+        return True
+
+    modules = payload.get('modules') or []
+    if isinstance(modules, list):
+        for mod in modules:
+            if not isinstance(mod, dict):
+                continue
+            if str(mod.get('name') or '').strip():
+                return True
+            for feat in (mod.get('features') or []):
+                if not isinstance(feat, dict):
+                    continue
+                if str(feat.get('name') or '').strip():
+                    return True
+                try:
+                    if float(feat.get('estimated_hours') or 0) > 0:
+                        return True
+                except (TypeError, ValueError):
+                    pass
+    return False
+
+
 # ===== Legacy Estimate Endpoints (Backward Compatible) =====
 
 @router.post("/estimates", response_model=schemas.Estimate)
@@ -32,6 +63,59 @@ def create_estimate(estimate_in: dict = Body(...), db: Session = Depends(get_db)
         raise HTTPException(status_code=422, detail=e.errors())
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Failed to save estimate: {str(e)}")
+
+
+@router.post('/estimates/draft', response_model=schemas.Estimate)
+def create_estimate_draft(estimate_in: dict = Body(...), db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    """Create a draft estimate for in-progress form data (no version history)."""
+    try:
+        if not _has_minimum_draft_data(estimate_in):
+            raise HTTPException(status_code=422, detail='Minimum draft data required (project name, primary technology, or module/feature).')
+
+        estimate_in = dict(estimate_in or {})
+        estimate_in['status'] = 'Draft'
+        estimate_in['is_draft'] = True
+        estimate_in.pop('last_change_comment', None)
+        fixed = schemas.EstimateCreateFixedCost(**estimate_in)
+        return crud.create_estimate_draft(db, fixed, user=current_user)
+    except ValidationError as e:
+        raise HTTPException(status_code=422, detail=e.errors())
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f'Failed to auto-save draft: {str(e)}')
+
+
+@router.put('/estimates/{estimate_id}/draft', response_model=schemas.Estimate)
+def update_estimate_draft(estimate_id: int, estimate_in: dict = Body(...), db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    """Update an existing draft estimate in-place (no version history)."""
+    db_estimate = crud.get_estimate(db, estimate_id)
+    if not db_estimate:
+        raise HTTPException(status_code=404, detail='Estimate not found')
+    if db_estimate.created_by_user_id is not None and db_estimate.created_by_user_id != current_user.id:
+        raise HTTPException(status_code=403, detail='Not authorized to modify this estimate')
+    if not db_estimate.is_draft and str(db_estimate.status or '').strip().lower() != 'draft':
+        raise HTTPException(status_code=409, detail='This estimate is not an active draft')
+
+    if not _has_minimum_draft_data(estimate_in):
+        raise HTTPException(status_code=422, detail='Minimum draft data required (project name, primary technology, or module/feature).')
+
+    try:
+        estimate_in = dict(estimate_in or {})
+        estimate_in['status'] = 'Draft'
+        estimate_in['is_draft'] = True
+        estimate_in.pop('last_change_comment', None)
+        fixed = schemas.EstimateCreateFixedCost(**estimate_in)
+        updated = crud.update_estimate_draft(db, estimate_id, fixed, user=current_user)
+        if not updated:
+            raise HTTPException(status_code=404, detail='Estimate not found')
+        return updated
+    except ValidationError as e:
+        raise HTTPException(status_code=422, detail=e.errors())
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f'Failed to auto-save draft: {str(e)}')
 
 
 @router.get("/estimates/{estimate_id}", response_model=schemas.Estimate)
@@ -110,9 +194,16 @@ def update_estimate(estimate_id: int, estimate_in: dict = Body(...), db: Session
         # Frontend sends full fixed-cost payload for edits. Comment is mandatory.
         if "modules" in estimate_in or "project_info" in estimate_in or estimate_in.get("is_fixed_cost"):
             fixed = schemas.EstimateCreateFixedCost(**estimate_in)
-            if not fixed.last_change_comment or not fixed.last_change_comment.strip():
+            is_draft_finalize = bool(db_estimate.is_draft) or str(db_estimate.status or '').strip().lower() == 'draft'
+            if not is_draft_finalize and (not fixed.last_change_comment or not fixed.last_change_comment.strip()):
                 raise HTTPException(status_code=422, detail="Change comment is required when updating an estimate")
-            updated = crud.update_estimate_fixed_cost(db, estimate_id, fixed, user=current_user)
+            updated = crud.update_estimate_fixed_cost(
+                db,
+                estimate_id,
+                fixed,
+                user=current_user,
+                require_change_comment=not is_draft_finalize,
+            )
         else:
             legacy = schemas.EstimateUpdate(**estimate_in)
             updated = crud.update_estimate(db, estimate_id, legacy)

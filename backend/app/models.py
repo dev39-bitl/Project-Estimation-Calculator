@@ -75,6 +75,8 @@ class Estimate(Base):
     version_number = Column(Integer, default=1)
     is_editable = Column(Boolean, default=True)
     status = Column(String(50), default="Estimation Initiation")
+    is_draft = Column(Boolean, default=False)
+    auto_saved_at = Column(DateTime(timezone=True), nullable=True)
     last_change_comment = Column(Text, nullable=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())

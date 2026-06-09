@@ -226,6 +226,7 @@ function SavedEstimates({ refreshKey, onLoad, onAddNew }) {
             const version = item.version_number || 1
             const status = item.status || 'Estimation Initiation'
             const isEditable = item.is_editable !== false
+            const isDraft = item.is_draft || String(status).toLowerCase() === 'draft'
 
             return (
               <div key={item.id} className="saved-list-row">
@@ -248,9 +249,16 @@ function SavedEstimates({ refreshKey, onLoad, onAddNew }) {
                 </span>
                 <span>{formatDate(item.updated_at || item.created_at)}</span>
                 <span className="saved-actions">
-                  <button className="btn btn-ghost btn-icon" onClick={() => onLoad && onLoad(item, false)} title="View estimate">👁️</button>
-                  <button className="btn btn-ghost btn-icon" onClick={() => onLoad && onLoad(item, true)} disabled={!isEditable} title={!isEditable ? 'Locked by Admin' : 'Edit estimate'}>✏️</button>
-                  <button className="btn btn-ghost btn-icon" onClick={() => handleDelete(item.id)} title="Delete estimate">🗑️</button>
+                  <button className="btn btn-ghost" onClick={() => onLoad && onLoad(item, false)} title="View estimate">View</button>
+                  <button
+                    className="btn btn-ghost"
+                    onClick={() => onLoad && onLoad(item, true)}
+                    disabled={!isEditable}
+                    title={!isEditable ? 'Locked by Admin' : (isDraft ? 'Continue draft' : 'Edit estimate')}
+                  >
+                    {isDraft ? 'Continue' : 'Edit'}
+                  </button>
+                  <button className="btn btn-ghost" onClick={() => handleDelete(item.id)} title="Delete estimate">Delete</button>
                   {(item.comments || []).filter(c => !c.is_read_by_estimator).length > 0 && (
                     <span className="badge badge-warning" title="Admin comments available">
                       💬 {(item.comments || []).filter(c => !c.is_read_by_estimator).length}

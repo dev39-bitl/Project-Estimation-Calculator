@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { authService, saveAuth } from '../services/auth'
 import brainiumLogo from '../assets/brainium-logo.png'
 
@@ -6,9 +6,30 @@ export default function Login({ onLogin, switchToSignup, switchToAdminLogin }) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
-  const [error, setError] = useState('')
+  const [loginError, setLoginError] = useState('')
+  const [canDismissError, setCanDismissError] = useState(false)
   const [loading, setLoading] = useState(false)
   const [logoFailed, setLogoFailed] = useState(false)
+  const dismissTimerRef = useRef(null)
+
+  useEffect(() => {
+    if (!loginError) {
+      setCanDismissError(false)
+      if (dismissTimerRef.current) {
+        clearTimeout(dismissTimerRef.current)
+      }
+      return
+    }
+
+    setCanDismissError(false)
+    dismissTimerRef.current = setTimeout(() => {
+      setCanDismissError(true)
+    }, 8000)
+
+    return () => {
+      if (dismissTimerRef.current) clearTimeout(dismissTimerRef.current)
+    }
+  }, [loginError])
 
   const submit = async (e) => {
     e.preventDefault()
@@ -17,11 +38,11 @@ export default function Login({ onLogin, switchToSignup, switchToAdminLogin }) {
     try {
       const resp = await authService.login({ email, password })
       if (resp?.data?.access_token) {
-        setError('') // Only clear on success
+        setLoginError('')
         saveAuth(resp.data.access_token, resp.data.user)
         onLogin(resp.data.user)
       } else {
-        setError('Invalid login response from server')
+        setLoginError('Invalid email or password.')
       }
     } catch (err) {
       console.error('[Login Component] Error:', err)
@@ -31,12 +52,12 @@ export default function Login({ onLogin, switchToSignup, switchToAdminLogin }) {
         errorMsg = 'Invalid email or password.'
       } else if (detail === 'Your account has been disabled by the administrator.') {
         errorMsg = 'Your account has been disabled by the administrator.'
+      } else if (detail === 'Please verify your email before logging in.') {
+        errorMsg = 'Please verify your email before logging in.'
       } else if (err.code === 'ERR_NETWORK' || err.message === 'Network Error') {
         errorMsg = 'Cannot connect to server. Please make sure the backend is running.'
-      } else if (err.message) {
-        errorMsg = 'Invalid email or password.'
       }
-      setError(errorMsg)
+      setLoginError(errorMsg)
     } finally {
       setLoading(false)
     }
@@ -74,13 +95,14 @@ export default function Login({ onLogin, switchToSignup, switchToAdminLogin }) {
               <p>Sign in to your estimator account</p>
             </div>
 
-            {error && (
+            {loginError && (
               <div className="auth-error auth-error--dismissible">
-                <span>{error}</span>
+                <span>{loginError}</span>
                 <button
                   type="button"
                   className="auth-error-close"
-                  onClick={() => setError('')}
+                  onClick={() => setLoginError('')}
+                  disabled={!canDismissError}
                   aria-label="Dismiss error"
                 >×</button>
               </div>
@@ -94,7 +116,7 @@ export default function Login({ onLogin, switchToSignup, switchToAdminLogin }) {
                   value={email}
                   onChange={e => {
                     setEmail(e.target.value)
-                    if (error) setError('')
+                    if (loginError) setLoginError('')
                   }}
                   placeholder="you@company.com"
                   required
@@ -108,7 +130,7 @@ export default function Login({ onLogin, switchToSignup, switchToAdminLogin }) {
                     value={password}
                     onChange={e => {
                       setPassword(e.target.value)
-                      if (error) setError('')
+                      if (loginError) setLoginError('')
                     }}
                     placeholder="••••••••"
                     required
