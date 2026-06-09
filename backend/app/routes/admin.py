@@ -1,9 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException, Body, UploadFile, File, Form
 from sqlalchemy.orm import Session
+import os
 from ..database import get_db
-from ..auth import get_current_user, require_admin
+from ..auth import get_current_user, require_admin, get_password_hash
 from .. import crud, schemas, models
-from ..email_service import send_notification_email
+from ..email_service import send_notification_email, send_admin_notification_email, send_account_created_email
 import csv
 from fastapi.responses import StreamingResponse
 from io import StringIO
@@ -17,6 +18,7 @@ MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 ALLOWED_EXTENSIONS = {"pdf", "doc", "docx", "xls", "xlsx", "png", "jpg", "jpeg", "txt", "zip"}
 
 ALLOWED_PROJECT_STATUSES = {
+    "Draft",
     "Estimation Initiation",
     "Client Review",
     "Client Feedback",
@@ -25,7 +27,12 @@ ALLOWED_PROJECT_STATUSES = {
     "On Hold",
     "Revised Estimate",
     "Approved Internally",
+    "Closed",
 }
+
+
+def _portal_link() -> str:
+    return os.getenv("FRONTEND_URL", "http://localhost:5173").rstrip("/")
 
 
 def _can_delete_user(db: Session, target_user: models.User, current_user: models.User) -> tuple[bool, str | None]:
@@ -60,6 +67,55 @@ def dashboard(db: Session = Depends(get_db), current_user: models.User = Depends
 def list_users(db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
     require_admin(current_user)
     return db.query(models.User).all()
+
+
+@router.post("/users", response_model=schemas.User)
+def create_user(
+    body: schemas.AdminCreateUserRequest,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    require_admin(current_user)
+    
+    # Check if email already exists
+    existing = db.query(models.User).filter(models.User.email == body.email).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="An account with this email already exists.")
+    
+    # Create new user
+    new_user = models.User(
+        full_name=body.full_name,
+        email=body.email,
+        hashed_password=get_password_hash(body.password),
+        role=body.role or "estimator",
+        is_active=body.is_active,
+        is_email_verified=body.is_email_verified,
+    )
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+    
+    # Send account details email to new user
+    try:
+        send_account_created_email(new_user.email, new_user.full_name, body.password)
+    except Exception as e:
+        print(f"[Create User] Failed to send account email: {str(e)}")
+    
+    # Notify admin that user was created
+    send_admin_notification_email(
+        subject="New user account created",
+        title="New user account created",
+        message="An admin account has been created.",
+        details={
+            "Full name": new_user.full_name,
+            "Email": new_user.email,
+            "Role": new_user.role,
+        },
+        db=db,
+        event_type="admin_user_created",
+    )
+    
+    return new_user
 
 
 @router.patch("/users/{user_id}/block", response_model=schemas.User)
@@ -211,9 +267,15 @@ def lock_estimate(estimate_id: int, db: Session = Depends(get_db), current_user:
     if estimate.created_by_email:
         send_notification_email(
             to_email=estimate.created_by_email,
-            subject="Your estimate has been locked",
-            message=f"Admin has locked editing for your estimate. You can still view it in read-only mode.",
+            subject="Estimate editing status changed",
+            message="Admin changed estimate editing access.",
             estimate_title=estimate.name,
+            details={
+                "Project name": estimate.name or "-",
+                "Editing status": "Locked",
+                "Portal link": _portal_link(),
+            },
+            event_type="estimate_locked",
         )
     return {"message": "Estimate locked", "is_editable": False}
 
@@ -230,9 +292,15 @@ def unlock_estimate(estimate_id: int, db: Session = Depends(get_db), current_use
     if estimate.created_by_email:
         send_notification_email(
             to_email=estimate.created_by_email,
-            subject="Your estimate has been unlocked",
-            message="Admin has re-enabled editing for your estimate. You can now update it.",
+            subject="Estimate editing status changed",
+            message="Admin changed estimate editing access.",
             estimate_title=estimate.name,
+            details={
+                "Project name": estimate.name or "-",
+                "Editing status": "Unlocked",
+                "Portal link": _portal_link(),
+            },
+            event_type="estimate_unlocked",
         )
     return {"message": "Estimate unlocked", "is_editable": True}
 
@@ -259,17 +327,55 @@ def update_estimate_status(
             },
         )
 
+    old_status = estimate.status or "Estimation Initiation"
     estimate.status = status
     db.commit()
     db.refresh(estimate)
+
+    estimator_subject = "Estimate status updated"
+    estimator_message = "Your estimate project status was updated by admin."
+
+    if status == "Canceled":
+        estimator_subject = "Estimate canceled"
+        estimator_message = "Your estimate has been marked as canceled."
+    elif status == "Closed":
+        estimator_subject = "Estimate closed"
+        estimator_message = "Your estimate has been closed."
+    elif status == "Project Awarded":
+        estimator_subject = "Estimate awarded"
+        estimator_message = "Congratulations, the estimate has been marked as Project Awarded."
+
     # Notify estimator
     if estimate.created_by_email:
         send_notification_email(
             to_email=estimate.created_by_email,
-            subject=f"Estimate status updated: {status}",
-            message=f"The status of your estimate has been changed to '{status}' by an admin.",
+            subject=estimator_subject,
+            message=estimator_message,
             estimate_title=estimate.name,
+            details={
+                "Project name": estimate.name or "-",
+                "Old status": old_status,
+                "New status": status,
+                "Changed by": f"{current_user.full_name or '-'} ({current_user.email})",
+                "Portal link": _portal_link(),
+            },
+            event_type="estimate_status_changed_by_admin",
         )
+
+    send_admin_notification_email(
+        subject="Estimate status changed",
+        title="Estimate status changed",
+        message="An estimate status was updated by admin.",
+        details={
+            "Project": estimate.name or "-",
+            "Old status": old_status,
+            "New status": status,
+            "Changed by": f"{current_user.full_name or '-'} ({current_user.email})",
+            "Portal link": _portal_link(),
+        },
+        db=db,
+        event_type="estimate_status_changed_admin",
+    )
     return estimate
 
 
@@ -310,6 +416,10 @@ async def add_comment(
             original_filename=file.filename,
             stored_filename=stored_filename,
             file_path=str(abs_path),
+            uploaded_by_role=current_user.role,
+            file_size=len(payload),
+            mime_type=(file.content_type or "application/octet-stream"),
+            upload_comment=comment_text.strip()[:500] if comment_text else None,
         )
 
     comment = crud.add_estimate_comment(
@@ -325,9 +435,15 @@ async def add_comment(
     if estimate.created_by_email:
         send_notification_email(
             to_email=estimate.created_by_email,
-            subject="New admin comment on your estimate",
-            message=f"An admin has added a comment: \"{comment_text.strip()[:200]}\"",
+            subject="New admin comment on estimate",
+            message="An admin added a new comment on your estimate.",
             estimate_title=estimate.name,
+            details={
+                "Project name": estimate.name or "-",
+                "Comment summary": comment_text.strip()[:200] or "-",
+                "Portal link": _portal_link(),
+            },
+            event_type="admin_comment_added",
         )
     return comment
 

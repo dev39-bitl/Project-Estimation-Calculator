@@ -26,7 +26,10 @@ export const API_BASE_URL =
  * Get authorization headers with Bearer token
  */
 export function getAuthHeaders() {
-  const token = localStorage.getItem('access_token')
+  const token =
+    localStorage.getItem('access_token') ||
+    localStorage.getItem('authToken') ||
+    localStorage.getItem('token')
   return token
     ? {
         Authorization: `Bearer ${token}`,

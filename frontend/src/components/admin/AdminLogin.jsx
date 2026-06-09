@@ -70,7 +70,7 @@ export default function AdminLogin({ onLogin, switchToUserLogin }) {
                   type="email"
                   value={email}
                   onChange={e => setEmail(e.target.value)}
-                  placeholder="admin@brainium.local"
+                  placeholder="web.brainium@gmail.com"
                   required
                 />
               </div>

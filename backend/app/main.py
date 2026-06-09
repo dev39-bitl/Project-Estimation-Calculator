@@ -1,11 +1,12 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import os
 from dotenv import load_dotenv
 
 from .database import engine, Base, SessionLocal, migrate_sqlite_schema
-from .routes import estimates, auth, admin
+from .routes import estimates, auth, admin, users, dashboard
 from . import models, crud
+from .email_service import get_email_debug_config
 
 load_dotenv()
 
@@ -52,6 +53,8 @@ app.add_middleware(
 app.include_router(estimates.router)
 app.include_router(auth.router)
 app.include_router(admin.router)
+app.include_router(users.router)
+app.include_router(dashboard.router)
 
 
 @app.on_event("startup")
@@ -65,34 +68,36 @@ def startup_event():
     try:
         crud.get_or_create_default_rate_cards(db)
         crud.get_or_create_default_tech_stacks(db)
-        # ensure default admin exists and always has the current hash scheme
+        # Setup primary admin account.
         from .auth import get_password_hash
-        admin_user = db.query(models.User).filter(models.User.email == 'admin@brainium.local').first()
-        if not admin_user:
-            admin_obj = models.User(
+
+        # Ensure web.brainium@gmail.com exists as primary admin
+        primary_admin = db.query(models.User).filter(models.User.email == 'web.brainium@gmail.com').first()
+        if not primary_admin:
+            primary_admin = models.User(
                 full_name='Admin',
-                email='admin@brainium.local',
+                email='web.brainium@gmail.com',
                 hashed_password=get_password_hash('Admin@123'),
                 role='admin',
                 is_active=True,
-                is_email_verified=True,  # Admin is pre-verified
+                is_email_verified=True,
             )
-            db.add(admin_obj)
+            db.add(primary_admin)
             db.commit()
-            db.refresh(admin_obj)
-            print("[startup] Default admin created: admin@brainium.local / Admin@123")
+            print("[startup] Primary admin created: web.brainium@gmail.com / Admin@123")
         else:
-            # Re-hash with current scheme in case the stored hash is from old bcrypt
-            new_hash = get_password_hash('Admin@123')
-            if admin_user.hashed_password != new_hash:
-                admin_user.hashed_password = new_hash
+            needs_commit = False
+            if primary_admin.role != 'admin':
+                primary_admin.role = 'admin'
+                needs_commit = True
+            if not primary_admin.is_active:
+                primary_admin.is_active = True
+                needs_commit = True
+            if not primary_admin.is_email_verified:
+                primary_admin.is_email_verified = True
+                needs_commit = True
+            if needs_commit:
                 db.commit()
-                print("[startup] Admin password hash refreshed to SHA-256")
-            # Ensure existing admin is verified (idempotent)
-            if not admin_user.is_email_verified:
-                admin_user.is_email_verified = True
-                db.commit()
-                print("[startup] Admin email marked as verified")
     finally:
         db.close()
 
@@ -118,6 +123,19 @@ def health_check():
 def api_health_check():
     """Health check endpoint under /api prefix (for frontend compatibility)"""
     return {"status": "healthy", "version": "2.0", "mode": "fixed-cost-estimation"}
+
+
+@app.get("/api/debug/email-config")
+def debug_email_config():
+    """Development-only endpoint for safe email configuration diagnostics."""
+    if os.getenv("ENVIRONMENT", "development").lower() != "development":
+        raise HTTPException(status_code=404, detail="Not found")
+
+    db = SessionLocal()
+    try:
+        return get_email_debug_config(db=db)
+    finally:
+        db.close()
 
 
 if __name__ == "__main__":

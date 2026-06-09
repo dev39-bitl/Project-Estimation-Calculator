@@ -1,53 +1,136 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, Body
+from fastapi import APIRouter, Depends, HTTPException, Query, Body, UploadFile, File, Form
 from fastapi.responses import FileResponse
 from pathlib import Path
+import os
+import re
+import uuid
 from sqlalchemy.orm import Session
 from .. import crud, schemas, calculator, models
 from ..database import get_db
 from ..auth import get_current_user
-from ..email_service import send_notification_email
+from ..email_service import send_admin_notification_email
 from pydantic import ValidationError
 
 router = APIRouter(prefix="/api", tags=["estimates"])
+
+UPLOAD_DIR = Path(__file__).resolve().parents[2] / "uploads" / "estimate_files"
+MAX_UPLOAD_BYTES = 10 * 1024 * 1024
+ALLOWED_EXTENSIONS = {"pdf", "doc", "docx", "xls", "xlsx", "png", "jpg", "jpeg", "txt", "zip"}
+
+ALLOWED_PROJECT_STATUSES = {
+    "Draft",
+    "Estimation Initiation",
+    "Client Review",
+    "Client Feedback",
+    "Project Awarded",
+    "Canceled",
+    "On Hold",
+    "Revised Estimate",
+    "Approved Internally",
+    "Closed",
+}
 
 
 # ---------------------------------------------------------------------------
 # Notification helpers
 # ---------------------------------------------------------------------------
 
-def _get_admin_emails(db: Session) -> list[str]:
-    """Return email addresses of all active admin users."""
-    admins = db.query(models.User).filter(
-        models.User.role == "admin",
-        models.User.is_active == True,  # noqa: E712
-    ).all()
-    return [a.email for a in admins if a.email]
+def _notify_admin_new_estimate(estimate: models.Estimate, estimator: models.User, db: Session | None = None) -> None:
+    frontend_url = os.getenv("FRONTEND_URL", "http://localhost:5173").rstrip("/")
+    send_admin_notification_email(
+        subject="New estimate created",
+        title="New estimate created",
+        message="An estimator has created or finalized an estimate.",
+        details={
+            "Project name": estimate.name or "-",
+            "Client name": estimate.client_name or "-",
+            "Estimator name": estimator.full_name,
+            "Estimator email": estimator.email,
+            "Total hours": str(round(float(estimate.total_estimated_hours or 0), 2)),
+            "Final fixed cost": str(round(float(estimate.final_fixed_cost or estimate.total_fixed_cost or 0), 2)),
+            "Status": estimate.status or "Estimation Initiation",
+            "Portal link": frontend_url,
+        },
+        db=db,
+        event_type="estimate_created",
+    )
 
 
-def _notify_admins_new_estimate(db: Session, estimate: models.Estimate, estimator: models.User) -> None:
-    for email in _get_admin_emails(db):
-        send_notification_email(
-            to_email=email,
-            subject="New estimate submitted",
-            message=(
-                f"Estimator <strong>{estimator.full_name}</strong> ({estimator.email}) "
-                f"has submitted a new estimate."
-            ),
-            estimate_title=estimate.name,
-        )
+def _notify_admin_draft_created(estimate: models.Estimate, estimator: models.User, db: Session | None = None) -> None:
+    frontend_url = os.getenv("FRONTEND_URL", "http://localhost:5173").rstrip("/")
+    send_admin_notification_email(
+        subject="New estimate created",
+        title="New estimate draft created",
+        message="An estimate draft has been auto-saved for the first time.",
+        details={
+            "Project name": estimate.name or "Untitled Estimate",
+            "Client name": estimate.client_name or "-",
+            "Estimator name": estimator.full_name,
+            "Estimator email": estimator.email,
+            "Status": estimate.status or "Draft",
+            "Portal link": frontend_url,
+        },
+        db=db,
+        event_type="estimate_draft_created",
+    )
 
 
-def _notify_admins_estimate_updated(db: Session, estimate: models.Estimate, estimator: models.User) -> None:
-    for email in _get_admin_emails(db):
-        send_notification_email(
-            to_email=email,
-            subject="Estimate updated",
-            message=(
-                f"Estimator <strong>{estimator.full_name}</strong> ({estimator.email}) "
-                f"has updated an estimate (version {estimate.version_number})."
-            ),
-            estimate_title=estimate.name,
-        )
+def _notify_admin_version_updated(
+    estimate: models.Estimate,
+    estimator: models.User,
+    old_version: int,
+    new_version: int,
+    change_comment: str,
+    db: Session | None = None,
+) -> None:
+    frontend_url = os.getenv("FRONTEND_URL", "http://localhost:5173").rstrip("/")
+    send_admin_notification_email(
+        subject="Estimate updated",
+        title="Estimate updated",
+        message="An estimator has submitted a new estimate version.",
+        details={
+            "Project name": estimate.name or "-",
+            "Estimator name": estimator.full_name,
+            "Estimator email": estimator.email,
+            "Old version": str(old_version),
+            "New version": str(new_version),
+            "Change comment": change_comment or "-",
+            "Portal link": frontend_url,
+        },
+        db=db,
+        event_type="estimate_updated",
+    )
+
+
+def _notify_admin_status_changed_by_estimator(
+    estimate: models.Estimate,
+    estimator: models.User,
+    old_status: str,
+    new_status: str,
+    db: Session | None = None,
+) -> None:
+    frontend_url = os.getenv("FRONTEND_URL", "http://localhost:5173").rstrip("/")
+    send_admin_notification_email(
+        subject="Estimate status changed by estimator",
+        title="Estimate status changed by estimator",
+        message="An estimator updated estimate project status.",
+        details={
+            "Project name": estimate.name or "-",
+            "Estimator name": estimator.full_name,
+            "Estimator email": estimator.email,
+            "Old status": old_status,
+            "New status": new_status,
+            "Portal link": frontend_url,
+        },
+        db=db,
+        event_type="estimate_status_changed_by_estimator",
+    )
+
+
+def _sanitize_filename(name: str) -> str:
+    base = os.path.basename(name or "file")
+    cleaned = re.sub(r"[^A-Za-z0-9._-]+", "_", base).strip("._")
+    return cleaned or "file"
 
 
 def _has_minimum_draft_data(payload: dict) -> bool:
@@ -100,8 +183,7 @@ def create_estimate(estimate_in: dict = Body(...), db: Session = Depends(get_db)
             legacy = schemas.EstimateCreateLegacy(**estimate_in)
             result = crud.create_estimate_legacy(db, legacy, user=current_user)
 
-        # Notify all admins about the new estimate
-        _notify_admins_new_estimate(db, result, current_user)
+        _notify_admin_new_estimate(result, current_user, db=db)
         return result
     except ValidationError as e:
         raise HTTPException(status_code=422, detail=e.errors())
@@ -121,7 +203,9 @@ def create_estimate_draft(estimate_in: dict = Body(...), db: Session = Depends(g
         estimate_in['is_draft'] = True
         estimate_in.pop('last_change_comment', None)
         fixed = schemas.EstimateCreateFixedCost(**estimate_in)
-        return crud.create_estimate_draft(db, fixed, user=current_user)
+        created = crud.create_estimate_draft(db, fixed, user=current_user)
+        _notify_admin_draft_created(created, current_user, db=db)
+        return created
     except ValidationError as e:
         raise HTTPException(status_code=422, detail=e.errors())
     except HTTPException:
@@ -218,6 +302,167 @@ def download_estimate_file(file_id: int, db: Session = Depends(get_db), current_
     return FileResponse(path=str(file_path), filename=estimate_file.original_filename, media_type="application/octet-stream")
 
 
+@router.get("/estimates/{estimate_id}/files", response_model=list[schemas.EstimateFile])
+def list_estimate_files(estimate_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    estimate = crud.get_estimate(db, estimate_id)
+    if not estimate:
+        raise HTTPException(status_code=404, detail="Estimate not found")
+
+    is_admin = current_user.role == 'admin'
+    is_owner = estimate.created_by_user_id is not None and estimate.created_by_user_id == current_user.id
+    if not is_admin and not is_owner:
+        raise HTTPException(status_code=403, detail="Not authorized to view files for this estimate")
+
+    for item in estimate.files or []:
+        item.download_url = f"/api/files/{item.id}"
+    return estimate.files or []
+
+
+@router.post("/estimates/{estimate_id}/files", response_model=list[schemas.EstimateFile])
+async def upload_estimate_files(
+    estimate_id: int,
+    files: list[UploadFile] = File(...),
+    upload_comment: str | None = Form(default=None),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    estimate = crud.get_estimate(db, estimate_id)
+    if not estimate:
+        raise HTTPException(status_code=404, detail="Estimate not found")
+
+    is_admin = current_user.role == 'admin'
+    is_owner = estimate.created_by_user_id is not None and estimate.created_by_user_id == current_user.id
+    if not is_admin and not is_owner:
+        raise HTTPException(status_code=403, detail="Not authorized to upload files for this estimate")
+    if not is_admin and estimate.is_editable is False:
+        raise HTTPException(status_code=403, detail="This estimate is locked by admin and cannot be edited.")
+
+    if not files:
+        raise HTTPException(status_code=422, detail="No files provided")
+
+    normalized_comment = (upload_comment or "").strip()
+    if len(normalized_comment) > 500:
+        raise HTTPException(status_code=422, detail="Document purpose/comment must be 500 characters or fewer")
+    if not normalized_comment:
+        normalized_comment = None
+
+    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    uploaded: list[models.EstimateFile] = []
+
+    for upload in files:
+        if not upload or not upload.filename:
+            continue
+
+        safe_original = _sanitize_filename(upload.filename)
+        extension = safe_original.rsplit('.', 1)[-1].lower() if '.' in safe_original else ''
+        if extension not in ALLOWED_EXTENSIONS:
+            raise HTTPException(status_code=422, detail=f"Unsupported file type: {safe_original}")
+
+        payload = await upload.read()
+        if len(payload) > MAX_UPLOAD_BYTES:
+            raise HTTPException(status_code=413, detail=f"File size exceeds 10 MB limit: {safe_original}")
+
+        stored_filename = f"{uuid.uuid4().hex}.{extension}" if extension else uuid.uuid4().hex
+        abs_path = UPLOAD_DIR / stored_filename
+        abs_path.write_bytes(payload)
+
+        estimate_file = crud.add_estimate_file(
+            db,
+            estimate_id=estimate_id,
+            user=current_user,
+            original_filename=safe_original,
+            stored_filename=stored_filename,
+            file_path=str(abs_path),
+            uploaded_by_role=current_user.role,
+            file_size=len(payload),
+            mime_type=(upload.content_type or "application/octet-stream"),
+            upload_comment=normalized_comment,
+        )
+        uploaded.append(estimate_file)
+
+    db.commit()
+    for item in uploaded:
+        db.refresh(item)
+        item.download_url = f"/api/files/{item.id}"
+
+    # Optional notifications after successful upload only; never block action.
+    try:
+        frontend_url = os.getenv("FRONTEND_URL", "http://localhost:5173").rstrip("/")
+        if current_user.role == 'admin':
+            if estimate.created_by_email:
+                from ..email_service import send_notification_email
+
+                send_notification_email(
+                    to_email=estimate.created_by_email,
+                    subject="New supporting files added by admin",
+                    message="Admin uploaded supporting files to your estimate.",
+                    estimate_title=estimate.name,
+                    details={
+                        "Project name": estimate.name or "-",
+                        "Files uploaded": str(len(uploaded)),
+                        "Upload comment": normalized_comment or "No comment added",
+                        "Portal link": frontend_url,
+                    },
+                    event_type="admin_supporting_files_uploaded",
+                )
+        else:
+            # Notify admin only for non-draft/finalized estimate uploads.
+            if not estimate.is_draft and str(estimate.status or '').strip().lower() != 'draft':
+                send_admin_notification_email(
+                    subject="Supporting files uploaded",
+                    title="Supporting files uploaded",
+                    message="Estimator uploaded supporting files to an estimate.",
+                    details={
+                        "Project name": estimate.name or "-",
+                        "Estimator name": current_user.full_name,
+                        "Estimator email": current_user.email,
+                        "Files uploaded": str(len(uploaded)),
+                        "Upload comment": normalized_comment or "No comment added",
+                        "Portal link": frontend_url,
+                    },
+                    db=db,
+                    event_type="estimator_supporting_files_uploaded",
+                )
+    except Exception:
+        pass
+
+    return uploaded
+
+
+@router.delete("/estimates/{estimate_id}/files/{file_id}")
+def delete_estimate_file(
+    estimate_id: int,
+    file_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    estimate = crud.get_estimate(db, estimate_id)
+    if not estimate:
+        raise HTTPException(status_code=404, detail="Estimate not found")
+
+    estimate_file = crud.get_estimate_file(db, file_id)
+    if not estimate_file or estimate_file.estimate_id != estimate_id:
+        raise HTTPException(status_code=404, detail="File not found")
+
+    is_admin = current_user.role == 'admin'
+    is_owner = estimate.created_by_user_id is not None and estimate.created_by_user_id == current_user.id
+    if not is_admin and not is_owner:
+        raise HTTPException(status_code=403, detail="Not authorized to delete this file")
+    if not is_admin and estimate.is_editable is False:
+        raise HTTPException(status_code=403, detail="This estimate is locked by admin and cannot be edited.")
+
+    file_path = Path(estimate_file.file_path or "")
+    db.delete(estimate_file)
+    db.commit()
+    if file_path.exists() and file_path.is_file():
+        try:
+            file_path.unlink()
+        except OSError:
+            pass
+
+    return {"message": "File deleted successfully"}
+
+
 @router.put("/estimates/{estimate_id}", response_model=schemas.Estimate)
 def update_estimate(estimate_id: int, estimate_in: dict = Body(...), db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
     """Update an existing estimate"""
@@ -231,6 +476,8 @@ def update_estimate(estimate_id: int, estimate_in: dict = Body(...), db: Session
     try:
         if not isinstance(estimate_in, dict):
             raise HTTPException(status_code=422, detail="Invalid update payload")
+
+        old_version = int(db_estimate.version_number or 1)
 
         # Status is admin-controlled; ignore estimator-supplied status.
         estimate_in.pop("status", None)
@@ -254,9 +501,19 @@ def update_estimate(estimate_id: int, estimate_in: dict = Body(...), db: Session
 
         if not updated:
             raise HTTPException(status_code=404, detail="Estimate not found")
-        # Notify admins about the update (skip for drafts)
-        if not (db_estimate.is_draft or str(db_estimate.status or '').lower() == 'draft'):
-            _notify_admins_estimate_updated(db, updated, current_user)
+        was_draft_before = bool(db_estimate.is_draft) or str(db_estimate.status or '').lower() == 'draft'
+        if was_draft_before:
+            _notify_admin_new_estimate(updated, current_user, db=db)
+        else:
+            new_version = int(updated.version_number or old_version)
+            _notify_admin_version_updated(
+                updated,
+                current_user,
+                old_version=old_version,
+                new_version=new_version,
+                change_comment=str(estimate_in.get('last_change_comment') or ''),
+                db=db,
+            )
         return updated
     except ValidationError as e:
         raise HTTPException(status_code=422, detail=e.errors())
@@ -293,6 +550,43 @@ def mark_comments_read(estimate_id: int, db: Session = Depends(get_db), current_
             raise HTTPException(status_code=403, detail="Not authorized")
     crud.mark_comments_read(db, estimate_id)
     return {"message": "Comments marked as read"}
+
+
+@router.patch("/estimates/{estimate_id}/status", response_model=schemas.Estimate)
+def update_estimate_status_by_estimator(
+    estimate_id: int,
+    body: schemas.EstimateStatusUpdate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """Allow estimator/owner to update project status and notify admin."""
+    estimate = crud.get_estimate(db, estimate_id)
+    if not estimate:
+        raise HTTPException(status_code=404, detail="Estimate not found")
+
+    is_owner = estimate.created_by_user_id is not None and estimate.created_by_user_id == current_user.id
+    if current_user.role != 'admin' and not is_owner:
+        raise HTTPException(status_code=403, detail="Not authorized to update this estimate status")
+
+    new_status = (body.status or "").strip()
+    if new_status not in ALLOWED_PROJECT_STATUSES:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "message": "Invalid project status",
+                "allowed_statuses": sorted(ALLOWED_PROJECT_STATUSES),
+            },
+        )
+
+    old_status = estimate.status or "Estimation Initiation"
+    estimate.status = new_status
+    db.commit()
+    db.refresh(estimate)
+
+    if old_status != new_status:
+        _notify_admin_status_changed_by_estimator(estimate, current_user, old_status, new_status, db=db)
+
+    return estimate
 
 
 # ===== Fixed-Cost Estimation Endpoints =====

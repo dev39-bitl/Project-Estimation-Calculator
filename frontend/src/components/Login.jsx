@@ -145,7 +145,7 @@ export default function Login({ onLogin, switchToSignup, switchToAdminLogin, swi
                   >{showPassword ? '🙈' : '👁️'}</button>
                 </div>
               </div>
-              <button className="auth-submit-btn" type="submit" disabled={loading}>
+              <button className="auth-submit-btn form-submit-btn" type="submit" disabled={loading}>
                 {loading ? 'Signing in…' : 'Sign In'}
               </button>
             </form>

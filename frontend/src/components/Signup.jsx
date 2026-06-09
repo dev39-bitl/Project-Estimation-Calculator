@@ -2,6 +2,49 @@ import React, { useState } from 'react'
 import { authService } from '../services/auth'
 import brainiumLogo from '../assets/brainium-logo.png'
 
+const PASSWORD_RULES = [
+  { test: (value) => value.length >= 8, message: 'Password must be at least 8 characters.' },
+  { test: (value) => /[A-Z]/.test(value), message: 'Password must include at least one uppercase letter.' },
+  { test: (value) => /[a-z]/.test(value), message: 'Password must include at least one lowercase letter.' },
+  { test: (value) => /\d/.test(value), message: 'Password must include at least one number.' },
+  { test: (value) => /[^A-Za-z0-9]/.test(value), message: 'Password must include at least one special character.' },
+]
+
+function validateFullName(value) {
+  const cleaned = String(value || '').trim()
+  if (!cleaned) return 'Full name is required.'
+  if (cleaned.length < 2) return 'Full name must be at least 2 characters.'
+  return ''
+}
+
+function validateEmail(value) {
+  const raw = String(value || '')
+  const cleaned = raw.trim()
+  if (!cleaned) return 'Email is required.'
+  if (raw.includes(' ')) return 'Email must not contain spaces.'
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleaned)) return 'Enter a valid email address.'
+  return ''
+}
+
+function validatePassword(value) {
+  if (!value) return 'Password is required.'
+  for (const rule of PASSWORD_RULES) {
+    if (!rule.test(value)) return rule.message
+  }
+  return ''
+}
+
+function extractBackendError(detail) {
+  if (!detail) return 'Signup failed.'
+  if (typeof detail === 'string') return detail
+  if (Array.isArray(detail) && detail.length > 0) {
+    const first = detail[0]
+    if (typeof first === 'string') return first
+    if (first?.msg) return first.msg
+  }
+  return 'Signup failed.'
+}
+
 export default function Signup({ onSignup, switchToLogin, switchToVerify }) {
   const [fullName, setFullName] = useState('')
   const [email, setEmail] = useState('')
@@ -15,22 +58,16 @@ export default function Signup({ onSignup, switchToLogin, switchToVerify }) {
 
   const validate = () => {
     const next = {}
-    if (!fullName.trim()) next.fullName = 'Full name is required.'
-    if (!email.trim()) {
-      next.email = 'Email is required.'
-    } else if (!/^\S+@\S+\.\S+$/.test(email.trim())) {
-      next.email = 'Enter a valid email address.'
-    }
-    if (!password) {
-      next.password = 'Password is required.'
-    } else if (password.length < 6) {
-      next.password = 'Password must be at least 6 characters.'
-    }
-    if (!confirmPassword) {
-      next.confirmPassword = 'Confirm password is required.'
-    } else if (password !== confirmPassword) {
-      next.confirmPassword = 'Passwords do not match.'
-    }
+    next.fullName = validateFullName(fullName)
+    next.email = validateEmail(email)
+    next.password = validatePassword(password)
+    if (!confirmPassword) next.confirmPassword = 'Confirm password is required.'
+    else if (password !== confirmPassword) next.confirmPassword = 'Confirm password must match password.'
+
+    Object.keys(next).forEach(key => {
+      if (!next[key]) delete next[key]
+    })
+
     setFieldErrors(next)
     return Object.keys(next).length === 0
   }
@@ -44,23 +81,27 @@ export default function Signup({ onSignup, switchToLogin, switchToVerify }) {
     setError('')
     setLoading(true)
     try {
-      const resp = await authService.signup({ full_name: fullName, email, password })
+      const resp = await authService.signup({
+        full_name: fullName.trim(),
+        email: email.trim().toLowerCase(),
+        password,
+      })
       if (resp?.data?.id) {
         // Signup succeeded → show email verification screen
         if (switchToVerify) {
-          switchToVerify(email)
+          switchToVerify(email.trim().toLowerCase())
         }
       } else {
         setError('Signup failed')
       }
     } catch (err) {
       const detail = err.response?.data?.detail
-      if (detail === 'This email is already registered.') {
-        setError('This email is already registered.')
+      if (detail === 'An account with this email already exists.') {
+        setError('An account with this email already exists.')
       } else if (err.code === 'ERR_NETWORK' || err.message === 'Network Error') {
         setError('Cannot connect to server. Please make sure the backend is running.')
       } else {
-        setError(detail || 'Signup failed')
+        setError(extractBackendError(detail))
       }
     } finally {
       setLoading(false)
@@ -108,10 +149,11 @@ export default function Signup({ onSignup, switchToLogin, switchToVerify }) {
                   type="text"
                   value={fullName}
                   onChange={e => {
-                    setFullName(e.target.value)
-                    setFieldErrors(prev => ({ ...prev, fullName: '' }))
-                    if (error) setError('')
+                    const next = e.target.value
+                    setFullName(next)
+                    setFieldErrors(prev => ({ ...prev, fullName: validateFullName(next) }))
                   }}
+                  onBlur={() => setFieldErrors(prev => ({ ...prev, fullName: validateFullName(fullName) }))}
                   placeholder="John Smith"
                   required
                 />
@@ -123,10 +165,11 @@ export default function Signup({ onSignup, switchToLogin, switchToVerify }) {
                   type="email"
                   value={email}
                   onChange={e => {
-                    setEmail(e.target.value)
-                    setFieldErrors(prev => ({ ...prev, email: '' }))
-                    if (error) setError('')
+                    const next = e.target.value
+                    setEmail(next)
+                    setFieldErrors(prev => ({ ...prev, email: validateEmail(next) }))
                   }}
+                  onBlur={() => setFieldErrors(prev => ({ ...prev, email: validateEmail(email) }))}
                   placeholder="you@company.com"
                   required
                 />
@@ -139,10 +182,17 @@ export default function Signup({ onSignup, switchToLogin, switchToVerify }) {
                     type={showPassword ? 'text' : 'password'}
                     value={password}
                     onChange={e => {
-                      setPassword(e.target.value)
-                      setFieldErrors(prev => ({ ...prev, password: '' }))
-                      if (error) setError('')
+                      const next = e.target.value
+                      setPassword(next)
+                      setFieldErrors(prev => ({
+                        ...prev,
+                        password: validatePassword(next),
+                        confirmPassword: confirmPassword
+                          ? (confirmPassword === next ? '' : 'Confirm password must match password.')
+                          : prev.confirmPassword,
+                      }))
                     }}
+                    onBlur={() => setFieldErrors(prev => ({ ...prev, password: validatePassword(password) }))}
                     placeholder="••••••••"
                     required
                   />
@@ -161,16 +211,27 @@ export default function Signup({ onSignup, switchToLogin, switchToVerify }) {
                   type="password"
                   value={confirmPassword}
                   onChange={e => {
-                    setConfirmPassword(e.target.value)
-                    setFieldErrors(prev => ({ ...prev, confirmPassword: '' }))
-                    if (error) setError('')
+                    const next = e.target.value
+                    setConfirmPassword(next)
+                    setFieldErrors(prev => ({
+                      ...prev,
+                      confirmPassword: !next
+                        ? 'Confirm password is required.'
+                        : (next === password ? '' : 'Confirm password must match password.'),
+                    }))
                   }}
+                  onBlur={() => setFieldErrors(prev => ({
+                    ...prev,
+                    confirmPassword: !confirmPassword
+                      ? 'Confirm password is required.'
+                      : (confirmPassword === password ? '' : 'Confirm password must match password.'),
+                  }))}
                   placeholder="••••••••"
                   required
                 />
                 {fieldErrors.confirmPassword && <div className="auth-field-error">{fieldErrors.confirmPassword}</div>}
               </div>
-              <button className="auth-submit-btn" type="submit" disabled={loading}>
+              <button className="auth-submit-btn form-submit-btn" type="submit" disabled={loading}>
                 {loading ? 'Creating account…' : 'Create Account'}
               </button>
             </form>

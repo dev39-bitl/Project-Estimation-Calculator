@@ -5,7 +5,7 @@ import string
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from sqlalchemy.orm import Session
 
 from .. import models, schemas
@@ -18,6 +18,7 @@ from ..auth import (
 )
 from ..database import get_db
 from ..email_service import send_verification_code_email
+from ..email_service import send_admin_notification_email
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -82,7 +83,7 @@ def _create_and_send_verification_code(db: Session, user: models.User) -> None:
 def signup(user_in: schemas.UserCreate, db: Session = Depends(get_db)):
     existing = db.query(models.User).filter(models.User.email == user_in.email).first()
     if existing:
-        raise HTTPException(status_code=400, detail="This email is already registered.")
+        raise HTTPException(status_code=400, detail="An account with this email already exists.")
 
     user = models.User(
         full_name=user_in.full_name,
@@ -112,6 +113,21 @@ def signup(user_in: schemas.UserCreate, db: Session = Depends(get_db)):
             ),
         )
 
+    send_admin_notification_email(
+        subject="New estimator signup",
+        title="New estimator signup",
+        message=(
+            f"A new estimator signed up. Email verification is pending for {user.full_name}."
+        ),
+        details={
+            "Name": user.full_name,
+            "Email": user.email,
+            "Email verification": "Pending",
+        },
+        db=db,
+        event_type="new_estimator_signup",
+    )
+
     return user
 
 
@@ -119,10 +135,16 @@ class LoginRequest(BaseModel):
     email: str
     password: str
 
+    @field_validator('email')
+    @classmethod
+    def normalize_email(cls, value: str) -> str:
+        return (value or '').strip().lower()
+
 
 @router.post("/login", response_model=schemas.Token)
 def login(form_data: LoginRequest, db: Session = Depends(get_db)):
-    user = db.query(models.User).filter(models.User.email == form_data.email).first()
+    email = (form_data.email or "").strip().lower()
+    user = db.query(models.User).filter(models.User.email == email).first()
     if not user:
         raise HTTPException(status_code=401, detail="Invalid email or password.")
     if not verify_password(form_data.password, user.hashed_password):
@@ -186,6 +208,18 @@ def verify_email(body: schemas.VerifyEmailRequest, db: Session = Depends(get_db)
     user.is_email_verified = True
     user.email_verified_at = now
     db.commit()
+
+    send_admin_notification_email(
+        subject="Estimator email verified",
+        title="Estimator email verified",
+        message=f"An estimator has verified their email address.",
+        details={
+            "Name": user.full_name,
+            "Email": user.email,
+        },
+        db=db,
+        event_type="estimator_email_verified",
+    )
 
     return {"message": "Email verified successfully. You can now log in."}
 

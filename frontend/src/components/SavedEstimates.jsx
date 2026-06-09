@@ -2,14 +2,16 @@ import React, { useEffect, useMemo, useState } from 'react'
 import { estimateAPI } from '../services/api'
 
 const PROJECT_STATUSES = [
+  'Draft',
   'Estimation Initiation',
   'Client Review',
   'Client Feedback',
-  'Project Awarded',
-  'Canceled',
-  'On Hold',
   'Revised Estimate',
   'Approved Internally',
+  'Project Awarded',
+  'On Hold',
+  'Canceled',
+  'Closed',
 ]
 
 function formatDate(value) {
@@ -40,6 +42,8 @@ function SavedEstimates({ refreshKey, onLoad, onAddNew }) {
   const [sortConfig, setSortConfig] = useState({ key: 'updated_at', direction: 'desc' })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [currentPage, setCurrentPage] = useState(1)
+  const [pageSize, setPageSize] = useState(10)
 
   const fetchAll = async () => {
     setLoading(true)
@@ -140,6 +144,29 @@ function SavedEstimates({ refreshKey, onLoad, onAddNew }) {
     setEditableFilter('all')
     setDateFilter('all')
     setSortConfig({ key: 'updated_at', direction: 'desc' })
+    setCurrentPage(1)
+  }
+
+  const paginatedEstimates = useMemo(() => {
+    const startIndex = (currentPage - 1) * pageSize
+    const endIndex = startIndex + pageSize
+    return filteredEstimates.slice(startIndex, endIndex)
+  }, [filteredEstimates, currentPage, pageSize])
+
+  const totalPages = Math.ceil(filteredEstimates.length / pageSize)
+
+  const handlePageSizeChange = (e) => {
+    const newPageSize = Number(e.target.value)
+    setPageSize(newPageSize)
+    setCurrentPage(1)
+  }
+
+  const handlePrevPage = () => {
+    setCurrentPage(prev => Math.max(1, prev - 1))
+  }
+
+  const handleNextPage = () => {
+    setCurrentPage(prev => Math.min(totalPages, prev + 1))
   }
 
   const handleDelete = async id => {
@@ -168,7 +195,7 @@ function SavedEstimates({ refreshKey, onLoad, onAddNew }) {
           <p className="muted">Project name and primary technology are required for new estimates.</p>
         </div>
         <div className="saved-toolbar-right">
-          <button className="btn btn-primary" onClick={onAddNew}>
+          <button className="cta-gradient" onClick={onAddNew}>
             Add New Estimate →
           </button>
         </div>
@@ -220,7 +247,7 @@ function SavedEstimates({ refreshKey, onLoad, onAddNew }) {
         {filteredEstimates.length === 0 ? (
           <div className="saved-empty">No saved estimates found.</div>
         ) : (
-          filteredEstimates.map(item => {
+          paginatedEstimates.map(item => {
             const totalHours = item.total_estimated_hours ?? item.effort_hours ?? 0
             const finalCost = item.total_fixed_cost ?? item.total_cost ?? 0
             const version = item.version_number || 1
@@ -270,6 +297,32 @@ function SavedEstimates({ refreshKey, onLoad, onAddNew }) {
           })
         )}
       </div>
+
+      {filteredEstimates.length > 0 && (
+        <div className="pagination-controls" style={{ marginTop: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <label style={{ fontSize: '0.9rem' }}>Items per page:</label>
+            <select value={pageSize} onChange={handlePageSizeChange} style={{ padding: '6px 10px', borderRadius: '8px', border: '1px solid #2B4564', background: '#10243A', color: '#FFFFFF' }}>
+              <option value={10}>10</option>
+              <option value={20}>20</option>
+              <option value={50}>50</option>
+              <option value={100}>100</option>
+            </select>
+          </div>
+
+          <div style={{ fontSize: '0.9rem', color: '#C9D6EA' }}>
+            Showing {(currentPage - 1) * pageSize + 1}-{Math.min(currentPage * pageSize, filteredEstimates.length)} of {filteredEstimates.length} estimates
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <button className="btn btn-secondary" onClick={handlePrevPage} disabled={currentPage === 1}>← Previous</button>
+            <span style={{ fontSize: '0.9rem', color: '#C9D6EA', minWidth: '60px', textAlign: 'center' }}>
+              Page {currentPage} of {totalPages}
+            </span>
+            <button className="btn btn-secondary" onClick={handleNextPage} disabled={currentPage === totalPages}>Next →</button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

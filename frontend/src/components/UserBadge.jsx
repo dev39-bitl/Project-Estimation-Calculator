@@ -10,11 +10,8 @@ export default function UserBadge({ user, onLogout }) {
 
   if (!user) return null
   return (
-    <div className="user-badge">
-      <div className="user-info">
-        <div className="user-name">{user.full_name}</div>
-        <div className="user-email muted">{user.email}</div>
-      </div>
+    <div className="user-header-actions">
+      <span className="user-display-name">{user.full_name}</span>
       <button className="btn btn-ghost" onClick={logout}>Logout</button>
     </div>
   )

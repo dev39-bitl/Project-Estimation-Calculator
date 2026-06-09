@@ -73,6 +73,14 @@ def migrate_sqlite_schema():
             if col_name not in user_existing_cols:
                 conn.execute(text(f"ALTER TABLE users ADD COLUMN {col_name} {col_type}"))
 
+        # Auto-verify existing users (migration for old users without email verification)
+        # This safely handles the case where users existed before email verification was added
+        conn.execute(text("""
+            UPDATE users 
+            SET is_email_verified = 1, email_verified_at = CURRENT_TIMESTAMP 
+            WHERE is_email_verified IS NULL OR is_email_verified = 0
+        """))
+
         conn.execute(text(
             """
             CREATE TABLE IF NOT EXISTS email_verifications (
@@ -137,15 +145,34 @@ def migrate_sqlite_schema():
                 estimate_id INTEGER NOT NULL,
                 uploaded_by_user_id INTEGER,
                 uploaded_by_name VARCHAR(255),
+                uploaded_by_email VARCHAR(255),
+                uploaded_by_role VARCHAR(50),
+                upload_comment VARCHAR(500),
                 original_filename VARCHAR(255) NOT NULL,
                 stored_filename VARCHAR(255) NOT NULL,
                 file_path VARCHAR(512) NOT NULL,
+                file_size INTEGER,
+                mime_type VARCHAR(255),
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY(estimate_id) REFERENCES estimates(id),
                 FOREIGN KEY(uploaded_by_user_id) REFERENCES users(id)
             )
             """
         ))
+
+        estimate_file_cols = {
+            row[1] for row in conn.execute(text("PRAGMA table_info(estimate_files)"))
+        }
+        if "uploaded_by_role" not in estimate_file_cols:
+            conn.execute(text("ALTER TABLE estimate_files ADD COLUMN uploaded_by_role VARCHAR(50)"))
+        if "uploaded_by_email" not in estimate_file_cols:
+            conn.execute(text("ALTER TABLE estimate_files ADD COLUMN uploaded_by_email VARCHAR(255)"))
+        if "upload_comment" not in estimate_file_cols:
+            conn.execute(text("ALTER TABLE estimate_files ADD COLUMN upload_comment VARCHAR(500)"))
+        if "file_size" not in estimate_file_cols:
+            conn.execute(text("ALTER TABLE estimate_files ADD COLUMN file_size INTEGER"))
+        if "mime_type" not in estimate_file_cols:
+            conn.execute(text("ALTER TABLE estimate_files ADD COLUMN mime_type VARCHAR(255)"))
 
 
 def get_db():

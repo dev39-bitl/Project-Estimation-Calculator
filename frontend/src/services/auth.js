@@ -2,8 +2,12 @@ import api from './api'
 
 export const authService = {
   signup: (data) => {
+    const payload = {
+      ...data,
+      email: String(data.email || '').trim().toLowerCase(),
+    }
     console.log('[Auth] Signup request to:', `${api.defaults.baseURL}/auth/signup`)
-    return api.post('/auth/signup', data).then(res => {
+    return api.post('/auth/signup', payload).then(res => {
       console.log('[Auth] Signup success:', res.status)
       return res
     }).catch(err => {
@@ -12,8 +16,12 @@ export const authService = {
     })
   },
   login: (data) => {
-    console.log('[Auth] Login request to:', `${api.defaults.baseURL}/auth/login`, 'email:', data.email)
-    return api.post('/auth/login', data).then(res => {
+    const payload = {
+      ...data,
+      email: String(data.email || '').trim().toLowerCase(),
+    }
+    console.log('[Auth] Login request to:', `${api.defaults.baseURL}/auth/login`, 'email:', payload.email)
+    return api.post('/auth/login', payload).then(res => {
       console.log('[Auth] Login success:', res.status, 'user:', res.data?.user?.email)
       return res
     }).catch(err => {
@@ -43,6 +51,9 @@ export const authService = {
     })
   },
   me: () => api.get('/auth/me'),
+  getProfile: () => api.get('/users/me'),
+  updateProfile: (full_name) => api.put('/users/me/profile', { full_name }),
+  updatePassword: (payload) => api.put('/users/me/password', payload),
 }
 
 export function saveAuth(token, user) {

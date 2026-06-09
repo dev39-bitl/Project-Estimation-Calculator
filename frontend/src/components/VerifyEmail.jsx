@@ -171,7 +171,7 @@ export default function VerifyEmail({ email: initialEmail, switchToLogin, onVeri
                 />
               </div>
 
-              <button className="auth-submit-btn" type="submit" disabled={loading || !!success}>
+              <button className="auth-submit-btn form-submit-btn" type="submit" disabled={loading || !!success}>
                 {loading ? 'Verifying…' : 'Verify Email'}
               </button>
             </form>
@@ -181,7 +181,7 @@ export default function VerifyEmail({ email: initialEmail, switchToLogin, onVeri
                 Didn&apos;t receive the code?{' '}
                 <button
                   type="button"
-                  className="auth-link-btn"
+                  className="cta-gradient auth-resend-btn"
                   onClick={handleResend}
                   disabled={resendCountdown > 0 || resending}
                 >

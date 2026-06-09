@@ -1,4 +1,5 @@
-from pydantic import BaseModel, Field
+import re
+from pydantic import BaseModel, Field, field_validator, model_validator
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 
@@ -13,6 +14,42 @@ class UserBase(BaseModel):
 
 class UserCreate(UserBase):
     password: str
+
+    @field_validator('full_name')
+    @classmethod
+    def validate_full_name(cls, value: str) -> str:
+        cleaned = (value or '').strip()
+        if len(cleaned) < 2:
+            raise ValueError('Full name must be at least 2 characters.')
+        return cleaned
+
+    @field_validator('email')
+    @classmethod
+    def normalize_email(cls, value: str) -> str:
+        cleaned = (value or '').strip().lower()
+        if not cleaned:
+            raise ValueError('Email is required.')
+        if ' ' in cleaned:
+            raise ValueError('Email must not contain spaces.')
+        if not re.match(r'^[^\s@]+@[^\s@]+\.[^\s@]+$', cleaned):
+            raise ValueError('Enter a valid email address.')
+        return cleaned
+
+    @field_validator('password')
+    @classmethod
+    def validate_password(cls, value: str) -> str:
+        pwd = value or ''
+        if len(pwd) < 8:
+            raise ValueError('Password must be at least 8 characters.')
+        if not re.search(r'[A-Z]', pwd):
+            raise ValueError('Password must include at least one uppercase letter.')
+        if not re.search(r'[a-z]', pwd):
+            raise ValueError('Password must include at least one lowercase letter.')
+        if not re.search(r'\d', pwd):
+            raise ValueError('Password must include at least one number.')
+        if not re.search(r'[^A-Za-z0-9]', pwd):
+            raise ValueError('Password must include at least one special character.')
+        return pwd
 
 
 class User(UserBase):
@@ -34,6 +71,128 @@ class VerifyEmailRequest(BaseModel):
 
 class ResendVerificationRequest(BaseModel):
     email: str
+
+    @field_validator('email')
+    @classmethod
+    def normalize_email(cls, value: str) -> str:
+        return (value or '').strip().lower()
+
+
+class UserProfileUpdateRequest(BaseModel):
+    full_name: str
+
+    @field_validator('full_name')
+    @classmethod
+    def validate_full_name(cls, value: str) -> str:
+        cleaned = (value or '').strip()
+        if len(cleaned) < 2:
+            raise ValueError('Full name must be at least 2 characters.')
+        return cleaned
+
+
+class UserPasswordUpdateRequest(BaseModel):
+    current_password: str
+    new_password: str
+    confirm_new_password: str
+
+    @field_validator('current_password')
+    @classmethod
+    def validate_current_password(cls, value: str) -> str:
+        if not (value or '').strip():
+            raise ValueError('Current password is required.')
+        return value
+
+    @field_validator('new_password')
+    @classmethod
+    def validate_new_password(cls, value: str) -> str:
+        pwd = value or ''
+        if len(pwd) < 8:
+            raise ValueError('New password must be at least 8 characters.')
+        if not re.search(r'[A-Z]', pwd):
+            raise ValueError('New password must include at least one uppercase letter.')
+        if not re.search(r'[a-z]', pwd):
+            raise ValueError('New password must include at least one lowercase letter.')
+        if not re.search(r'\d', pwd):
+            raise ValueError('New password must include at least one number.')
+        if not re.search(r'[^A-Za-z0-9]', pwd):
+            raise ValueError('New password must include at least one special character.')
+        return pwd
+
+    @model_validator(mode='after')
+    def validate_password_confirmation(self):
+        if self.new_password != self.confirm_new_password:
+            raise ValueError('Confirm new password must match new password.')
+        return self
+
+
+class DashboardLatestEstimate(BaseModel):
+    id: int
+    name: str
+    status: Optional[str] = None
+    updated_at: Optional[datetime] = None
+
+
+class DashboardSummaryResponse(BaseModel):
+    total_estimates: int
+    draft_count: int
+    editable_count: int
+    locked_count: int
+    total_hours: float
+    total_fixed_cost: float
+    latest_estimate: Optional[DashboardLatestEstimate] = None
+    status_breakdown: Dict[str, int]
+
+
+class AdminCreateUserRequest(BaseModel):
+    full_name: str
+    email: str
+    password: str
+    confirm_password: str
+    role: str = "estimator"
+    is_active: bool = True
+    is_email_verified: bool = True
+
+    @field_validator('full_name')
+    @classmethod
+    def validate_full_name(cls, value: str) -> str:
+        cleaned = (value or '').strip()
+        if len(cleaned) < 2:
+            raise ValueError('Full name must be at least 2 characters.')
+        return cleaned
+
+    @field_validator('email')
+    @classmethod
+    def normalize_email(cls, value: str) -> str:
+        cleaned = (value or '').strip().lower()
+        if not cleaned:
+            raise ValueError('Email is required.')
+        if ' ' in cleaned:
+            raise ValueError('Email must not contain spaces.')
+        if not re.match(r'^[^\s@]+@[^\s@]+\.[^\s@]+$', cleaned):
+            raise ValueError('Enter a valid email address.')
+        return cleaned
+
+    @field_validator('password')
+    @classmethod
+    def validate_password(cls, value: str) -> str:
+        pwd = value or ''
+        if len(pwd) < 8:
+            raise ValueError('Password must be at least 8 characters.')
+        if not re.search(r'[A-Z]', pwd):
+            raise ValueError('Password must include at least one uppercase letter.')
+        if not re.search(r'[a-z]', pwd):
+            raise ValueError('Password must include at least one lowercase letter.')
+        if not re.search(r'\d', pwd):
+            raise ValueError('Password must include at least one number.')
+        if not re.search(r'[^A-Za-z0-9]', pwd):
+            raise ValueError('Password must include at least one special character.')
+        return pwd
+
+    @model_validator(mode='after')
+    def validate_password_confirmation(self):
+        if self.password != self.confirm_password:
+            raise ValueError('Confirm password must match password.')
+        return self
 
 
 class Token(BaseModel):
@@ -314,9 +473,14 @@ class EstimateFile(BaseModel):
     estimate_id: int
     uploaded_by_user_id: Optional[int] = None
     uploaded_by_name: Optional[str] = None
+    uploaded_by_email: Optional[str] = None
+    uploaded_by_role: Optional[str] = None
+    upload_comment: Optional[str] = None
     original_filename: str
     stored_filename: str
     file_path: str
+    file_size: Optional[int] = None
+    mime_type: Optional[str] = None
     download_url: Optional[str] = None
     created_at: datetime
 

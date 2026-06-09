@@ -825,14 +825,23 @@ def add_estimate_file(
     original_filename: str,
     stored_filename: str,
     file_path: str,
+    uploaded_by_role: str | None = None,
+    file_size: int | None = None,
+    mime_type: str | None = None,
+    upload_comment: str | None = None,
 ) -> models.EstimateFile:
     estimate_file = models.EstimateFile(
         estimate_id=estimate_id,
         uploaded_by_user_id=user.id if user else None,
         uploaded_by_name=user.full_name if user else None,
+        uploaded_by_email=user.email if user else None,
+        uploaded_by_role=uploaded_by_role or (user.role if user else None),
+        upload_comment=upload_comment,
         original_filename=original_filename,
         stored_filename=stored_filename,
         file_path=file_path,
+        file_size=file_size,
+        mime_type=mime_type,
     )
     db.add(estimate_file)
     db.flush()

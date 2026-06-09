@@ -147,7 +147,7 @@ function EstimateForm({ onEstimateCreated, loadEstimate }) {
 
       <div style={{display:'flex',gap:10,marginTop:16}}>
         <button className="btn btn-primary" onClick={handleCalculate} type="button">Calculate Estimate</button>
-        <button className="btn btn-ghost" onClick={handleSave} disabled={loading}>{loading ? 'Saving...' : 'Save Estimate'}</button>
+        <button className="primary-action-btn" onClick={handleSave} disabled={loading}>{loading ? 'Saving...' : 'Save Estimate'}</button>
         <button className="btn btn-ghost" onClick={handleLoadSaved} type="button">Load Saved Estimates</button>
       </div>
 

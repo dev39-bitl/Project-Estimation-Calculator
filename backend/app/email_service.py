@@ -8,8 +8,10 @@ SMTP_PASSWORD is never logged or exposed in any output.
 import logging
 import os
 import smtplib
+from html import escape
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +35,124 @@ def _get_smtp_config() -> dict:
 
 def _notification_enabled() -> bool:
     return os.getenv("NOTIFICATION_EMAIL_ENABLED", "false").lower() == "true"
+
+
+def _is_smtp_configured() -> bool:
+    cfg = _get_smtp_config()
+    return bool(cfg["username"] and cfg["password"] and cfg["from_email"])
+
+
+def get_admin_notification_email(db: Session | None = None) -> str:
+    """
+    Resolve admin notification recipient with fallback chain:
+    1) ADMIN_NOTIFICATION_EMAIL env
+    2) Active admin email from DB (excluding legacy local admin)
+    3) web.brainium@gmail.com
+    """
+    configured = os.getenv("ADMIN_NOTIFICATION_EMAIL", "").strip()
+    if configured and not configured.lower().endswith("@brainium.local"):
+        return configured
+
+    if db is not None:
+        try:
+            from . import models
+
+            active_admin = (
+                db.query(models.User)
+                .filter(
+                    models.User.role == "admin",
+                    models.User.is_active == True,  # noqa: E712
+                    ~models.User.email.like("%@brainium.local"),
+                )
+                .order_by(models.User.id.asc())
+                .first()
+            )
+            if active_admin and active_admin.email:
+                return active_admin.email
+        except Exception as exc:
+            logger.warning("[Email] Failed resolving admin email from DB: %s", str(exc))
+
+    return "web.brainium@gmail.com"
+
+
+def _get_frontend_url() -> str:
+    frontend_url = os.getenv("FRONTEND_URL", "").strip().rstrip("/")
+    return frontend_url or "http://localhost:5173"
+
+
+def _get_app_logo_url() -> str | None:
+    logo_url = os.getenv("APP_LOGO_URL", "").strip()
+    if logo_url:
+        return logo_url
+    frontend_url = os.getenv("FRONTEND_URL", "").strip().rstrip("/")
+    if frontend_url:
+        return f"{frontend_url}/brainium-logo.png"
+    return None
+
+
+def _build_email_template(
+    title: str,
+    message: str,
+    details: dict[str, str] | None = None,
+    cta_text: str = "Please login to the portal to review details.",
+) -> tuple[str, str]:
+    logo_url = _get_app_logo_url()
+    safe_title = escape(title)
+    safe_message = escape(message).replace("\n", "<br>")
+
+    rows_html = ""
+    text_rows = []
+    if details:
+        for key, value in details.items():
+            safe_key = escape(str(key))
+            safe_value = escape(str(value))
+            rows_html += (
+                f"<tr>"
+                f"<td style='padding:8px 10px;border:1px solid #e5e7eb;background:#f8fafc;font-weight:600;color:#1f2937;'>{safe_key}</td>"
+                f"<td style='padding:8px 10px;border:1px solid #e5e7eb;color:#111827;'>{safe_value}</td>"
+                f"</tr>"
+            )
+            text_rows.append(f"- {key}: {value}")
+
+    details_table_html = ""
+    if rows_html:
+        details_table_html = (
+            "<table style='width:100%;border-collapse:collapse;margin:14px 0 18px;'>"
+            f"{rows_html}"
+            "</table>"
+        )
+
+        logo_block = (
+                f"<img src='{escape(logo_url)}' alt='Brainium' width='180' "
+                "style='display:block;max-width:180px;height:auto;border:0;outline:none;text-decoration:none;'>"
+                if logo_url
+                else "<div style='font-size:22px;font-weight:800;color:#10243a;letter-spacing:0.2px;'>Brainium</div>"
+        )
+
+        html_body = f"""
+    <div style="background:#f1f5f9;padding:24px 12px;font-family:Arial,Helvetica,sans-serif;">
+      <div style="max-width:620px;margin:0 auto;background:#ffffff;border:1px solid #e5e7eb;border-radius:12px;overflow:hidden;">
+        <div style="padding:18px 20px;border-bottom:1px solid #e5e7eb;background:#ffffff;text-align:left;">
+                    {logo_block}
+        </div>
+        <div style="padding:22px 20px;">
+          <h2 style="margin:0 0 12px;font-size:20px;line-height:1.3;color:#111827;">{safe_title}</h2>
+          <p style="margin:0 0 12px;font-size:14px;line-height:1.7;color:#374151;">{safe_message}</p>
+          {details_table_html}
+          <p style="margin:0;font-size:13px;line-height:1.6;color:#111827;font-weight:600;">{escape(cta_text)}</p>
+        </div>
+        <div style="padding:14px 20px;border-top:1px solid #e5e7eb;background:#f8fafc;">
+          <p style="margin:0;font-size:12px;line-height:1.5;color:#6b7280;">Brainium Project Estimation Portal</p>
+        </div>
+      </div>
+    </div>
+    """
+
+    text_body = f"{title}\n\n{message}\n"
+    if text_rows:
+        text_body += "\nDetails:\n" + "\n".join(text_rows) + "\n"
+    text_body += f"\n{cta_text}\n\nBrainium Project Estimation Portal"
+    return html_body, text_body
 
 
 # ---------------------------------------------------------------------------
@@ -116,47 +236,17 @@ def send_verification_code_email(to_email: str, full_name: str, code: str) -> No
     expiry = int(os.getenv("EMAIL_VERIFICATION_CODE_EXPIRY_MINUTES", "10"))
     subject = "Verify your Brainium account"
 
-    html_body = f"""
-    <div style="font-family: Inter, Arial, sans-serif; max-width: 520px; margin: 0 auto;
-                background: #0B1B2E; color: #F4F8FF; border-radius: 16px; padding: 36px 32px;">
-      <div style="margin-bottom: 28px;">
-        <span style="font-size: 1.5rem; font-weight: 800; color: #00AEEF;">Brainium</span>
-        <span style="font-size: 0.82rem; font-weight: 600; background: #7C3AED; color: #fff;
-                     padding: 2px 8px; border-radius: 999px; margin-left: 10px;">
-          Estimation Portal
-        </span>
-      </div>
-      <h2 style="font-size: 1.4rem; font-weight: 700; color: #F4F8FF; margin-bottom: 12px;">
-        Verify your email address
-      </h2>
-      <p style="color: #C9D6EA; font-size: 0.97rem; line-height: 1.65; margin-bottom: 8px;">
-        Hi {full_name}, thank you for signing up.<br>
-        Use the verification code below to activate your account.
-        This code expires in {expiry} minutes.
-      </p>
-      <div style="margin: 28px 0; text-align: center;">
-        <span style="display: inline-block; background: #142B45; border: 1px solid #2B4564;
-                     border-radius: 14px; padding: 18px 40px; font-size: 2.4rem;
-                     font-weight: 800; letter-spacing: 0.28em; color: #00AEEF;">
-          {code}
-        </span>
-      </div>
-      <p style="color: #8FA6C4; font-size: 0.88rem; line-height: 1.6;">
-        If you did not create a Brainium account, you can safely ignore this email.
-      </p>
-      <hr style="border: none; border-top: 1px solid #2B4564; margin: 28px 0;" />
-      <p style="color: #8FA6C4; font-size: 0.78rem;">
-        Brainium Project Estimation Portal
-      </p>
-    </div>
-    """
-
-    text_body = (
-        f"Hi {full_name},\n\n"
-        f"Your Brainium verification code is: {code}\n\n"
-        f"This code expires in {expiry} minutes.\n\n"
-        f"If you didn't sign up, please ignore this email.\n\n"
-        f"– Brainium"
+    html_body, text_body = _build_email_template(
+        title="Verify your email address",
+        message=(
+            f"Hi {full_name}, thank you for signing up. "
+            f"Use this verification code to activate your account. "
+            f"This code expires in {expiry} minutes."
+        ),
+        details={
+            "Verification code": code,
+            "Expires in": f"{expiry} minutes",
+        },
     )
 
     send_email(to_email, subject, html_body, text_body)
@@ -171,6 +261,8 @@ def send_notification_email(
     subject: str,
     message: str,
     estimate_title: str | None = None,
+    details: dict[str, str] | None = None,
+    event_type: str = "generic",
 ) -> None:
     """
     Send a notification email.
@@ -182,37 +274,24 @@ def send_notification_email(
     if not _notification_enabled():
         return
 
-    title_section = ""
+    merged_details = dict(details or {})
     if estimate_title:
-        title_section = (
-            f'<div style="margin: 16px 0; padding: 12px 16px; background: #142B45; '
-            f'border: 1px solid #2B4564; border-radius: 10px; '
-            f'color: #C9D6EA; font-size: 0.92rem;">'
-            f'Estimate: <strong style="color: #F4F8FF;">{estimate_title}</strong>'
-            f'</div>'
-        )
+        merged_details.setdefault("Project", estimate_title)
 
-    html_body = f"""
-    <div style="font-family: Inter, Arial, sans-serif; max-width: 520px; margin: 0 auto;
-                background: #0B1B2E; color: #F4F8FF; border-radius: 16px; padding: 36px 32px;">
-      <div style="margin-bottom: 24px;">
-        <span style="font-size: 1.4rem; font-weight: 800; color: #00AEEF;">Brainium</span>
-        <span style="font-size: 0.78rem; font-weight: 600; background: #7C3AED; color: #fff;
-                     padding: 2px 8px; border-radius: 999px; margin-left: 10px;">
-          Notification
-        </span>
-      </div>
-      <h2 style="font-size: 1.18rem; font-weight: 700; color: #F4F8FF; margin-bottom: 10px;">
-        {subject}
-      </h2>
-      {title_section}
-      <p style="color: #C9D6EA; font-size: 0.95rem; line-height: 1.65;">{message}</p>
-      <hr style="border: none; border-top: 1px solid #2B4564; margin: 28px 0;" />
-      <p style="color: #8FA6C4; font-size: 0.78rem;">Brainium Project Estimation Portal</p>
-    </div>
-    """
+    html_body, text_body = _build_email_template(
+        title=subject,
+        message=message,
+        details=merged_details,
+    )
 
-    text_body = f"{subject}\n\n{message}\n\n– Brainium"
+    logger.info(
+        "[Notification] event=%s recipient=%s subject=%s app_logo_url_configured=%s smtp_configured=%s",
+        event_type,
+        to_email,
+        subject,
+        "yes" if bool(_get_app_logo_url()) else "no",
+        "yes" if _is_smtp_configured() else "no",
+    )
 
     try:
         send_email(to_email, subject, html_body, text_body)
@@ -222,3 +301,67 @@ def send_notification_email(
             "[Notification] Email to %s failed (non-fatal): %s",
             to_email, str(exc),
         )
+
+
+def send_admin_notification_email(
+    subject: str,
+    title: str,
+    message: str,
+    details: dict[str, str] | None = None,
+    db: Session | None = None,
+    event_type: str = "admin_notification",
+) -> None:
+    if not _notification_enabled():
+        return
+    try:
+        html_body, text_body = _build_email_template(
+            title=title,
+            message=message,
+            details=details,
+        )
+        recipient = get_admin_notification_email(db)
+        logger.info(
+            "[Admin Notification] event=%s recipient=%s subject=%s app_logo_url_configured=%s smtp_configured=%s",
+            event_type,
+            recipient,
+            subject,
+            "yes" if bool(_get_app_logo_url()) else "no",
+            "yes" if _is_smtp_configured() else "no",
+        )
+        send_email(recipient, subject, html_body, text_body)
+    except Exception as exc:
+        logger.warning("[Admin Notification] Failed to send '%s': %s", subject, str(exc))
+
+
+def get_email_debug_config(db: Session | None = None) -> dict:
+    """Safe email configuration diagnostics for development/debugging."""
+    return {
+        "smtp_configured": _is_smtp_configured(),
+        "notification_email_enabled": _notification_enabled(),
+        "admin_notification_email": get_admin_notification_email(db),
+        "frontend_url": _get_frontend_url(),
+        "app_logo_url": _get_app_logo_url() or "",
+        "app_logo_url_configured": bool(_get_app_logo_url()),
+    }
+
+
+def send_account_created_email(to_email: str, full_name: str, temp_password: str) -> None:
+    """Send account creation details to newly created user by admin."""
+    if not _notification_enabled():
+        return
+    try:
+        frontend_url = os.getenv("FRONTEND_URL", "http://localhost:5173").rstrip("/")
+        html_body, text_body = _build_email_template(
+            title="Your Brainium Estimation Portal account has been created",
+            message="An admin has created an account for you. Please use the credentials below to login and change your password from your Profile.",
+            details={
+                "Full name": full_name,
+                "Email": to_email,
+                "Temporary password": temp_password,
+                "Login URL": frontend_url,
+            },
+            cta_text="Visit the portal to login and change your password.",
+        )
+        send_email(to_email, "Your Brainium account has been created", html_body, text_body)
+    except Exception as exc:
+        logger.warning("[Account Created Email] Failed to send to %s: %s", to_email, str(exc))

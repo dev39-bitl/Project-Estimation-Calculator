@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { adminAPI } from '../../services/adminApi'
+import CreateUserModal from './CreateUserModal'
 
 function getTimestamp(value) {
   if (!value) return 0
@@ -17,6 +18,7 @@ export default function AdminUsers() {
   const [roleFilter, setRoleFilter] = useState('all')
   const [statusFilter, setStatusFilter] = useState('all')
   const [sortConfig, setSortConfig] = useState({ key: 'created_at', direction: 'desc' })
+  const [showCreateModal, setShowCreateModal] = useState(false)
 
   const currentUserId = (() => {
     try {
@@ -176,6 +178,7 @@ export default function AdminUsers() {
             <option value="blocked">Blocked</option>
           </select>
           <button className="ap-btn ap-btn--sm" onClick={clearFilters}>Clear</button>
+          <button className="cta-gradient" onClick={() => setShowCreateModal(true)}>+ Create User</button>
           <button className="ap-btn ap-btn--sm ap-btn--danger" onClick={handleBulkDelete} disabled={selectedIds.length === 0}>Delete Selected</button>
         </div>
       </div>
@@ -252,6 +255,15 @@ export default function AdminUsers() {
           </table>
         </div>
       )}
+
+      <CreateUserModal
+        isOpen={showCreateModal}
+        onClose={() => setShowCreateModal(false)}
+        onSuccess={() => {
+          setActionMsg('User created successfully!')
+          load()
+        }}
+      />
     </div>
   )
 }

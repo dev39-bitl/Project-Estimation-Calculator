@@ -7,6 +7,9 @@ import OverheadSection from './components/OverheadSection'
 import EstimateSummary from './components/EstimateSummary'
 import ProposalSummary from './components/ProposalSummary'
 import SavedEstimates from './components/SavedEstimates'
+import DashboardSummary from './components/DashboardSummary'
+import Profile from './components/Profile'
+import FileUploader from './components/FileUploader'
 import Login from './components/Login'
 import Signup from './components/Signup'
 import VerifyEmail from './components/VerifyEmail'
@@ -85,17 +88,43 @@ function App() {
   const [editingEstimateId, setEditingEstimateId] = useState(null)
   const [loadedEstimateId, setLoadedEstimateId] = useState(null)
   const [changeComment, setChangeComment] = useState('')
+  const [changeCommentError, setChangeCommentError] = useState('')
+  const [loadedChangeNote, setLoadedChangeNote] = useState('')
   const [loadedEstimateComments, setLoadedEstimateComments] = useState([])
   const [isLoadedEstimateEditable, setIsLoadedEstimateEditable] = useState(true)
   const [logoFailed, setLogoFailed] = useState(false)
   const [currentDraftId, setCurrentDraftId] = useState(null)
   const [autoSaveStatus, setAutoSaveStatus] = useState('idle')
+  const [supportingFiles, setSupportingFiles] = useState([])
+  const [uploadedFiles, setUploadedFiles] = useState([])
+  const [uploadingFiles, setUploadingFiles] = useState(false)
 
   const autoSaveTimerRef = useRef(null)
   const lastAutoSavedPayloadRef = useRef('')
   const autoSaveStatusTimerRef = useRef(null)
+  const errorRef = useRef(null)
+  const changeCommentRef = useRef(null)
+  const supportingDocsRef = useRef(null)
+  const skipTopErrorScrollRef = useRef(false)
+  const [supportingDocsError, setSupportingDocsError] = useState('')
 
   const isViewMode = wizardMode === 'view'
+
+  useEffect(() => {
+    if (!error || skipTopErrorScrollRef.current) {
+      if (skipTopErrorScrollRef.current) skipTopErrorScrollRef.current = false
+      return
+    }
+    if (!errorRef.current) return
+    errorRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    errorRef.current.focus?.()
+  }, [error])
+
+  useEffect(() => {
+    if (!supportingDocsError || !supportingDocsRef.current) return
+    supportingDocsRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    supportingDocsRef.current.focus?.()
+  }, [supportingDocsError])
 
   const calculateBreakdown = useCallback(async () => {
     setError('')
@@ -264,10 +293,19 @@ function App() {
     setSaving(true)
     setError('')
     setSuccess('')
+    setChangeCommentError('')
 
     try {
       if (editingEstimateId && !changeComment.trim()) {
-        setError('Change comment is required before updating an estimate.')
+        const msg = 'Change comment is required when updating an estimate.'
+        setChangeCommentError(msg)
+        skipTopErrorScrollRef.current = true
+        setError(msg)
+        if (changeCommentRef.current) {
+          changeCommentRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' })
+          const textarea = changeCommentRef.current.querySelector('textarea')
+          textarea?.focus?.()
+        }
         setSaving(false)
         return
       }
@@ -343,7 +381,15 @@ function App() {
     setAutoSaveStatus('idle')
     lastAutoSavedPayloadRef.current = ''
     setChangeComment('')
+    setChangeCommentError('')
+    setLoadedChangeNote(estimate.last_change_comment || '')
     setLoadedEstimateComments(estimate.comments || [])
+    setUploadedFiles((estimate.files || []).map(file => ({
+      ...file,
+      download_url: toAbsoluteFileUrl(file.download_url || `/api/files/${file.id}`),
+    })))
+    setSupportingFiles([])
+    setSupportingDocsError('')
     setIsLoadedEstimateEditable(estimate.is_editable !== false)
 
     // If estimator opens a locked estimate, force view-only mode
@@ -425,6 +471,30 @@ function App() {
     setTimeout(() => calculateBreakdown(), 100)
   }
 
+  const continueLatestDraft = async () => {
+    setError('')
+    try {
+      const res = await estimateAPI.getAllEstimates(0, 200)
+      const estimates = res.data || []
+      const drafts = estimates
+        .filter(item => item.is_draft || String(item.status || '').toLowerCase() === 'draft')
+        .sort((a, b) => {
+          const ad = new Date(a.updated_at || a.created_at || 0).getTime()
+          const bd = new Date(b.updated_at || b.created_at || 0).getTime()
+          return bd - ad
+        })
+
+      if (drafts.length === 0) {
+        setError('No draft available to continue.')
+        return
+      }
+
+      handleLoadEstimate(drafts[0], true)
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Failed to continue draft.')
+    }
+  }
+
   const resetEstimate = () => {
     setProjectInfo(defaultProjectInfo)
     setTechStack(defaultTechStack)
@@ -454,11 +524,83 @@ function App() {
     setEditingEstimateId(null)
     setLoadedEstimateId(null)
     setChangeComment('')
+    setChangeCommentError('')
+    setLoadedChangeNote('')
     setLoadedEstimateComments([])
     setIsLoadedEstimateEditable(true)
     setCurrentDraftId(null)
     setAutoSaveStatus('idle')
+    setSupportingFiles([])
+    setUploadedFiles([])
+    setSupportingDocsError('')
     lastAutoSavedPayloadRef.current = ''
+  }
+
+  const getTargetEstimateId = async () => {
+    const existingId = loadedEstimateId || editingEstimateId || currentDraftId
+    if (existingId) return existingId
+
+    const payload = buildEstimatePayload()
+    const response = await estimateAPI.createDraft(payload)
+    const savedId = response?.data?.id
+    if (!savedId) throw new Error('Unable to create draft before upload')
+    setCurrentDraftId(savedId)
+    setLoadedEstimateId(savedId)
+    return savedId
+  }
+
+  const loadEstimateFiles = async (estimateId) => {
+    const res = await estimateAPI.listEstimateFiles(estimateId)
+    const files = (res.data || []).map(file => ({
+      ...file,
+      download_url: toAbsoluteFileUrl(file.download_url || `/api/files/${file.id}`),
+    }))
+    setUploadedFiles(files)
+  }
+
+  const uploadSupportingFiles = async (files, uploadComment = '') => {
+    if (!files || files.length === 0) return
+    setUploadingFiles(true)
+    setError('')
+    setSupportingDocsError('')
+    try {
+      const estimateId = await getTargetEstimateId()
+      await estimateAPI.uploadEstimateFiles(estimateId, files, uploadComment)
+      await loadEstimateFiles(estimateId)
+      setSupportingFiles([])
+      setSuccess('Supporting files uploaded successfully.')
+      return true
+    } catch (err) {
+      const message = err.response?.data?.detail || err.message || 'Failed to upload supporting files'
+      skipTopErrorScrollRef.current = true
+      setSupportingDocsError(message)
+      setError(message)
+      return false
+    } finally {
+      setUploadingFiles(false)
+    }
+  }
+
+  const handleRemoveFile = async (payload) => {
+    if (!payload) return
+    if (payload.type === 'queued') {
+      setSupportingFiles(prev => prev.filter((_, i) => i !== payload.index))
+      return
+    }
+    if (payload.type === 'existing' && payload.file) {
+      const estimateId = loadedEstimateId || editingEstimateId || currentDraftId
+      if (!estimateId) return
+      try {
+        await estimateAPI.deleteEstimateFile(estimateId, payload.file.id)
+        setUploadedFiles(prev => prev.filter(f => f.id !== payload.file.id))
+        setSupportingDocsError('')
+      } catch (err) {
+        const message = err.response?.data?.detail || 'Failed to delete file'
+        skipTopErrorScrollRef.current = true
+        setSupportingDocsError(message)
+        setError(message)
+      }
+    }
   }
 
   const openNewEstimateWizard = () => {
@@ -594,6 +736,32 @@ function App() {
         <EstimateSummary modules={modules} internalCosts={internalCosts} />
         <ProposalSummary breakdown={breakdown} projectInfo={projectInfo} techStack={techStack} modules={modules} />
 
+        <div className="card">
+          <FileUploader
+            title="Supporting Documents"
+            files={supportingFiles}
+            existingFiles={uploadedFiles}
+            onFilesChange={(nextFiles) => {
+              setSupportingFiles(nextFiles)
+              if (supportingDocsError) setSupportingDocsError('')
+            }}
+            onRemoveFile={handleRemoveFile}
+            onUpload={uploadSupportingFiles}
+            changeNote={changeComment || loadedChangeNote}
+            uploading={uploadingFiles}
+            externalError={supportingDocsError}
+            containerRef={supportingDocsRef}
+            onValidationError={(message) => {
+              skipTopErrorScrollRef.current = true
+              setSupportingDocsError(message)
+            }}
+            multiple={true}
+            maxSizeMB={10}
+            allowedExtensions={['pdf', 'doc', 'docx', 'xls', 'xlsx', 'png', 'jpg', 'jpeg', 'txt', 'zip']}
+            readonly={isViewMode}
+          />
+        </div>
+
         {loadedEstimateComments.length > 0 && (
           <div className="card admin-comments-section">
             <h4>Admin Comments</h4>
@@ -628,15 +796,20 @@ function App() {
           </div>
         )}
         {wizardMode === 'edit' && editingEstimateId && (
-          <div className="card" style={{ marginTop: 12 }}>
+          <div ref={changeCommentRef} className="card" style={{ marginTop: 12 }}>
             <label htmlFor="change-comment"><strong>Change Comment (required for update)</strong></label>
             <textarea
               id="change-comment"
               value={changeComment}
-              onChange={e => setChangeComment(e.target.value)}
+              className={changeCommentError ? 'field-error-input' : ''}
+              onChange={e => {
+                setChangeComment(e.target.value)
+                if (changeCommentError) setChangeCommentError('')
+              }}
               placeholder="Describe what changed in this estimate version"
               rows={3}
             />
+            {changeCommentError && <div className="field-error-text">{changeCommentError}</div>}
           </div>
         )}
       </div>
@@ -714,20 +887,42 @@ function App() {
               </div>
             </div>
             <div className="header-actions">
+              <button
+                className={`${estimatorView === 'saved' ? 'primary-action-btn' : 'btn btn-secondary'}`}
+                onClick={() => setEstimatorView('saved')}
+              >
+                My Estimates
+              </button>
+              <button
+                className={`btn ${estimatorView === 'profile' ? 'btn-primary' : 'btn-secondary'}`}
+                onClick={() => setEstimatorView('profile')}
+              >
+                Profile
+              </button>
               <UserBadge user={currentUser} onLogout={handleLogout} />
             </div>
           </header>
 
-          {error && <div className="feedback error-message">{error}</div>}
+          {error && <div ref={errorRef} tabIndex={-1} className="feedback error-message form-error-alert">{error}</div>}
           {success && <div className="feedback success-message">{success}</div>}
 
           {estimatorView === 'saved' && (
             <main className="dashboard-main-single">
+              <DashboardSummary
+                refreshKey={savedKey}
+                onAddNew={openNewEstimateWizard}
+              />
               <SavedEstimates
                 refreshKey={savedKey}
                 onLoad={handleLoadEstimate}
                 onAddNew={openNewEstimateWizard}
               />
+            </main>
+          )}
+
+          {estimatorView === 'profile' && (
+            <main className="dashboard-main-single">
+              <Profile onProfileUpdated={setCurrentUser} />
             </main>
           )}
 
@@ -791,7 +986,7 @@ function App() {
 
                     <div className="wizard-footer-right">
                       {activeStep < WIZARD_STEPS.length - 1 && (
-                        <button className="btn btn-primary" onClick={goToNextStep} type="button">
+                        <button className="primary-action-btn" onClick={goToNextStep} type="button">
                           Next →
                         </button>
                       )}
@@ -800,7 +995,7 @@ function App() {
                           <button className="btn btn-secondary" onClick={calculateBreakdown} type="button">
                             Calculate Estimate
                           </button>
-                          <button className="btn btn-primary" onClick={saveEstimate} disabled={saving || !breakdown} type="button">
+                          <button className="primary-action-btn" onClick={saveEstimate} disabled={saving || !breakdown} type="button">
                             {saving ? 'Saving...' : (editingEstimateId ? 'Update Estimate →' : 'Save Estimate →')}
                           </button>
                         </>

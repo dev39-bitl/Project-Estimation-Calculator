@@ -14,7 +14,7 @@ Use this checklist to verify your deployment is complete and working correctly.
 - [ ] Login works
 - [ ] Estimates can be created/edited/deleted
 - [ ] Files can be uploaded and downloaded
-- [ ] Admin panel accessible (use admin@brainium.local)
+- [ ] Admin panel accessible (use web.brainium@gmail.com)
 - [ ] Health check works: `curl http://localhost:8000/api/health`
 
 ## ✅ One-Time Server Setup

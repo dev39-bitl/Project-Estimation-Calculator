@@ -66,12 +66,26 @@ DATABASE_URL=sqlite:///./test.db
 API_HOST=0.0.0.0
 API_PORT=8000
 API_RELOAD=false
+SMTP_PROVIDER=gmail
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USERNAME=web.brainium@gmail.com
+SMTP_PASSWORD=replace-with-gmail-app-password
+SMTP_FROM_EMAIL=web.brainium@gmail.com
+SMTP_FROM_NAME=Brainium Project Estimation Portal
+SMTP_USE_TLS=true
+SMTP_USE_SSL=false
+NOTIFICATION_EMAIL_ENABLED=true
+ADMIN_NOTIFICATION_EMAIL=web.brainium@gmail.com
+FRONTEND_URL=https://estimation-calculator.mydevfactory.com
+APP_LOGO_URL=https://estimation-calculator.mydevfactory.com/brainium-logo.png
 ```
 
 Important:
 - Keep `DATABASE_URL=sqlite:///./test.db` if you want DB in backend folder.
 - `API_RELOAD=false` for production.
 - Set a strong `SECRET_KEY`.
+- Configure SMTP variables so verification and notification emails work in production.
 
 ### 4.2 Validate backend manually
 

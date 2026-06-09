@@ -3,16 +3,19 @@ import { adminAPI } from '../../services/adminApi'
 import { exportEstimatePDF } from '../../utils/pdfExport'
 import { API_BASE_URL } from '../../config/apiConfig'
 import brainiumLogo from '../../assets/brainium-logo.png'
+import FileUploader from '../FileUploader'
 
 const PROJECT_STATUSES = [
+  'Draft',
   'Estimation Initiation',
   'Client Review',
   'Client Feedback',
-  'Project Awarded',
-  'Canceled',
-  'On Hold',
   'Revised Estimate',
   'Approved Internally',
+  'Project Awarded',
+  'On Hold',
+  'Canceled',
+  'Closed',
 ]
 
 function toAbsoluteUrl(url) {
@@ -30,7 +33,7 @@ export default function AdminEstimateDetails({ id, onDeleted, onBack }) {
   const [estimate, setEstimate] = useState(null)
   const [error, setError] = useState('')
   const [commentText, setCommentText] = useState('')
-  const [commentFile, setCommentFile] = useState(null)
+  const [reviewFiles, setReviewFiles] = useState([])
   const [commentError, setCommentError] = useState('')
   const [locking, setLocking] = useState(false)
   const [statusValue, setStatusValue] = useState('Estimation Initiation')
@@ -58,6 +61,9 @@ export default function AdminEstimateDetails({ id, onDeleted, onBack }) {
   if (!estimate) return <div className="ap-loading">Loading estimate...</div>
 
   const techStack = estimate.tech_stack_json || {}
+  const latestVersionChange = estimate.last_change_comment || ((estimate.versions || []).length > 0
+    ? [...estimate.versions].sort((a, b) => b.version_number - a.version_number)[0]?.last_change_comment
+    : '')
   const isEditable = estimate.is_editable !== false
 
   const handleLockToggle = async () => {
@@ -90,13 +96,8 @@ export default function AdminEstimateDetails({ id, onDeleted, onBack }) {
   }
 
   const handleSaveAdminReview = async () => {
-    if (commentFile && commentFile.size > 10 * 1024 * 1024) {
-      setCommentError('File size must be 10 MB or less.')
-      return
-    }
-
     const statusChanged = statusValue !== (estimate.status || 'Estimation Initiation')
-    const hasCommentOrFile = Boolean(commentText.trim() || commentFile)
+    const hasCommentOrFile = Boolean(commentText.trim() || reviewFiles.length > 0)
 
     if (!statusChanged && !hasCommentOrFile) {
       setActionMsg('No review changes to save.')
@@ -112,11 +113,15 @@ export default function AdminEstimateDetails({ id, onDeleted, onBack }) {
         await adminAPI.updateEstimateStatus(id, statusValue)
       }
       if (hasCommentOrFile) {
-        const normalizedComment = commentText.trim() || 'Client attachment uploaded.'
-        await adminAPI.addComment(id, normalizedComment, commentFile)
+        if (commentText.trim()) {
+          await adminAPI.addComment(id, commentText.trim(), null)
+        }
+        if (reviewFiles.length > 0) {
+          await adminAPI.uploadEstimateFiles(id, reviewFiles, commentText.trim())
+        }
       }
       setCommentText('')
-      setCommentFile(null)
+      setReviewFiles([])
       setActionMsg('Admin review saved successfully.')
       load()
     } catch (err) {
@@ -308,40 +313,95 @@ export default function AdminEstimateDetails({ id, onDeleted, onBack }) {
           )}
         </div>
 
-        <div className="ap-status-row" style={{ marginBottom: 12 }}>
-          <label className="ap-detail-label">Project Status</label>
-          <select value={statusValue} onChange={e => setStatusValue(e.target.value)}>
-            {PROJECT_STATUSES.map(status => (
-              <option key={status} value={status}>{status}</option>
-            ))}
-          </select>
-        </div>
+        <div className="admin-review-card">
+          <div className="admin-review-grid">
+            <div className="admin-review-left">
+              <div className="ap-status-row" style={{ marginBottom: 14 }}>
+                <label className="ap-detail-label">Project Status</label>
+                <select value={statusValue} onChange={e => setStatusValue(e.target.value)}>
+                  {PROJECT_STATUSES.map(status => (
+                    <option key={status} value={status}>{status}</option>
+                  ))}
+                </select>
+              </div>
 
-        <div style={{ marginBottom: 16 }}>
-          <textarea
-            className="ap-comment-textarea"
-            rows={3}
-            value={commentText}
-            onChange={e => setCommentText(e.target.value)}
-            placeholder="Write an admin comment for this estimate..."
-          />
-          <div style={{ marginTop: 8 }}>
-            <input
-              type="file"
-              accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,.txt,.zip"
-              onChange={e => setCommentFile(e.target.files?.[0] || null)}
-            />
-            {commentFile && <div className="muted" style={{ marginTop: 4 }}>Attached: {commentFile.name}</div>}
+              <div className="ap-status-row" style={{ marginBottom: 14 }}>
+                <label className="ap-detail-label">Editing Access</label>
+                <button
+                  className={`ap-btn ap-btn--sm ${isEditable ? 'ap-btn--warning admin-btn-lock' : 'ap-btn--success admin-btn-unlock'}`}
+                  onClick={handleLockToggle}
+                  disabled={locking}
+                  type="button"
+                >
+                  {locking ? 'Updating...' : isEditable ? 'Lock Editing' : 'Unlock Editing'}
+                </button>
+              </div>
+
+              <button
+                className="primary-action-btn"
+                onClick={handleSaveAdminReview}
+                disabled={reviewSaving}
+                type="button"
+              >
+                {reviewSaving ? 'Saving...' : 'Save Admin Review'}
+              </button>
+            </div>
+
+            <div className="admin-review-right">
+              <label className="ap-detail-label">Admin Comment</label>
+              <textarea
+                className="ap-comment-textarea"
+                rows={4}
+                value={commentText}
+                onChange={e => setCommentText(e.target.value)}
+                placeholder="Write an admin comment for this estimate..."
+              />
+
+              <div style={{ marginTop: 12 }}>
+                <FileUploader
+                  title="Supporting Documents"
+                  files={reviewFiles}
+                  existingFiles={(estimate.files || []).map(file => ({
+                    ...file,
+                    download_url: toAbsoluteUrl(file.download_url || `/api/files/${file.id}`),
+                  }))}
+                  onFilesChange={setReviewFiles}
+                  onRemoveFile={async (payload) => {
+                    if (payload?.type === 'queued') {
+                      setReviewFiles(prev => prev.filter((_, idx) => idx !== payload.index))
+                      return
+                    }
+                    if (payload?.type === 'existing' && payload.file) {
+                      try {
+                        await adminAPI.deleteEstimateFile(id, payload.file.id)
+                        load()
+                      } catch (err) {
+                        setCommentError(err.response?.data?.detail || 'Failed to delete file.')
+                      }
+                    }
+                  }}
+                  onUpload={async (filesToUpload, uploadComment) => {
+                    if (!filesToUpload || filesToUpload.length === 0) return
+                    try {
+                      await adminAPI.uploadEstimateFiles(id, filesToUpload, uploadComment)
+                      setReviewFiles([])
+                      load()
+                      return true
+                    } catch (err) {
+                      setCommentError(err.response?.data?.detail || 'Failed to upload files.')
+                      return false
+                    }
+                  }}
+                  uploading={reviewSaving}
+                  changeNote={latestVersionChange}
+                  multiple={true}
+                  maxSizeMB={10}
+                  allowedExtensions={['pdf', 'doc', 'docx', 'xls', 'xlsx', 'png', 'jpg', 'jpeg', 'txt', 'zip']}
+                />
+              </div>
+            </div>
           </div>
-          {commentError && <div className="ap-alert ap-alert--error" style={{ marginTop: 4 }}>{commentError}</div>}
-          <button
-            className="ap-btn ap-btn--sm ap-btn--primary"
-            style={{ marginTop: 8 }}
-            onClick={handleSaveAdminReview}
-            disabled={reviewSaving}
-          >
-            {reviewSaving ? 'Saving...' : 'Save Admin Review'}
-          </button>
+          {commentError && <div className="ap-alert ap-alert--error" style={{ marginTop: 10 }}>{commentError}</div>}
         </div>
 
         {(estimate.comments || []).length === 0 ? (

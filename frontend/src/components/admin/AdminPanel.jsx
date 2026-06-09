@@ -4,6 +4,8 @@ import AdminUsers from './AdminUsers'
 import AdminEstimates from './AdminEstimates'
 import AdminEstimateDetails from './AdminEstimateDetails'
 import AdminReports from './AdminReports'
+import AdminProfile from './AdminProfile'
+import ErrorBoundary from '../ErrorBoundary'
 import brainiumLogo from '../../assets/brainium-logo.png'
 
 const NAV_ITEMS = [
@@ -11,6 +13,7 @@ const NAV_ITEMS = [
   { key: 'users', label: 'Users', icon: '👥' },
   { key: 'estimates', label: 'Estimates', icon: '📋' },
   { key: 'reports', label: 'Reports', icon: '📥' },
+  { key: 'profile', label: 'Profile', icon: '⚙️' },
 ]
 
 export default function AdminPanel({ user, onLogout }) {
@@ -35,6 +38,7 @@ export default function AdminPanel({ user, onLogout }) {
     estimates: 'All Estimates',
     'estimate-detail': 'Estimate Details',
     reports: 'Reports',
+    profile: 'My Profile',
   }[activeSection] || 'Admin'
 
   return (
@@ -91,13 +95,16 @@ export default function AdminPanel({ user, onLogout }) {
             )}
           </div>
 
-          <div className="ap-content">
-            {activeSection === 'dashboard' && <AdminDashboard onViewEstimate={handleViewEstimate} />}
-            {activeSection === 'users' && <AdminUsers />}
-            {activeSection === 'estimates' && <AdminEstimates onView={handleViewEstimate} onDeleted={() => {}} />}
-            {activeSection === 'estimate-detail' && <AdminEstimateDetails id={selectedEstimateId} onDeleted={() => setActiveSection('estimates')} onBack={() => handleNav('estimates')} />}
-            {activeSection === 'reports' && <AdminReports />}
-          </div>
+          <ErrorBoundary>
+            <div className="ap-content">
+              {activeSection === 'dashboard' && <AdminDashboard onViewEstimate={handleViewEstimate} />}
+              {activeSection === 'users' && <AdminUsers />}
+              {activeSection === 'estimates' && <AdminEstimates onView={handleViewEstimate} onDeleted={() => {}} />}
+              {activeSection === 'estimate-detail' && <AdminEstimateDetails id={selectedEstimateId} onDeleted={() => setActiveSection('estimates')} onBack={() => handleNav('estimates')} />}
+              {activeSection === 'reports' && <AdminReports />}
+              {activeSection === 'profile' && <AdminProfile />}
+            </div>
+          </ErrorBoundary>
         </main>
       </div>
     </div>
