@@ -110,22 +110,6 @@ function App() {
 
   const isViewMode = wizardMode === 'view'
 
-  useEffect(() => {
-    if (!error || skipTopErrorScrollRef.current) {
-      if (skipTopErrorScrollRef.current) skipTopErrorScrollRef.current = false
-      return
-    }
-    if (!errorRef.current) return
-    errorRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' })
-    errorRef.current.focus?.()
-  }, [error])
-
-  useEffect(() => {
-    if (!supportingDocsError || !supportingDocsRef.current) return
-    supportingDocsRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' })
-    supportingDocsRef.current.focus?.()
-  }, [supportingDocsError])
-
   const calculateBreakdown = useCallback(async () => {
     setError('')
     try {
@@ -206,6 +190,29 @@ function App() {
       setError('Unable to calculate estimate. Please review input values.')
     }
   }, [internalCosts, modules])
+
+  useEffect(() => {
+    if (!error || skipTopErrorScrollRef.current) {
+      if (skipTopErrorScrollRef.current) skipTopErrorScrollRef.current = false
+      return
+    }
+    if (!errorRef.current) return
+    errorRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    errorRef.current.focus?.()
+  }, [error])
+
+  useEffect(() => {
+    if (!supportingDocsError || !supportingDocsRef.current) return
+    supportingDocsRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    supportingDocsRef.current.focus?.()
+  }, [supportingDocsError])
+
+  // Auto-calculate breakdown whenever modules or internal costs change
+  useEffect(() => {
+    if (activeStep !== 4 || isViewMode) return
+    const timer = setTimeout(() => calculateBreakdown(), 200)
+    return () => clearTimeout(timer)
+  }, [modules, internalCosts, activeStep, isViewMode, calculateBreakdown])
 
   const hasMinimumUsefulData = useCallback(() => {
     if ((projectInfo.name || '').trim()) return true
@@ -991,14 +998,9 @@ function App() {
                         </button>
                       )}
                       {activeStep === WIZARD_STEPS.length - 1 && (
-                        <>
-                          <button className="btn btn-secondary" onClick={calculateBreakdown} type="button">
-                            Calculate Estimate
-                          </button>
-                          <button className="primary-action-btn" onClick={saveEstimate} disabled={saving || !breakdown} type="button">
-                            {saving ? 'Saving...' : (editingEstimateId ? 'Update Estimate →' : 'Save Estimate →')}
-                          </button>
-                        </>
+                        <button className="primary-action-btn" onClick={saveEstimate} disabled={saving || !breakdown} type="button">
+                          {saving ? 'Saving...' : (editingEstimateId ? 'Update Estimate →' : 'Save Estimate →')}
+                        </button>
                       )}
                     </div>
                   </div>

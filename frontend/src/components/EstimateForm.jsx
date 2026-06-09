@@ -75,14 +75,6 @@ function EstimateForm({ onEstimateCreated, loadEstimate }) {
     }
   }
 
-  const handleCalculate = () => {
-    // simple client-side calculate action
-    setError('')
-    setSuccess('')
-    const { totalHours, totalCost } = calculateTotals()
-    setSuccess(`Calculated: ${totalHours}h — $${totalCost.toFixed(2)}`)
-  }
-
   const handleLoadSaved = async () => {
     setLoading(true)
     setError('')
@@ -146,7 +138,6 @@ function EstimateForm({ onEstimateCreated, loadEstimate }) {
       </div>
 
       <div style={{display:'flex',gap:10,marginTop:16}}>
-        <button className="btn btn-primary" onClick={handleCalculate} type="button">Calculate Estimate</button>
         <button className="primary-action-btn" onClick={handleSave} disabled={loading}>{loading ? 'Saving...' : 'Save Estimate'}</button>
         <button className="btn btn-ghost" onClick={handleLoadSaved} type="button">Load Saved Estimates</button>
       </div>

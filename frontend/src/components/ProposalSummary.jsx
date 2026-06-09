@@ -1,8 +1,11 @@
-import React, { useState } from 'react'
+import React, { useState, useRef } from 'react'
+import FormattedProposalSummary from './FormattedProposalSummary'
 
 function ProposalSummary({ breakdown, projectInfo, techStack, modules }) {
   const [proposalText, setProposalText] = useState('')
   const [isEditingProposal, setIsEditingProposal] = useState(false)
+  const [copyFeedback, setCopyFeedback] = useState('')
+  const copyTimeoutRef = useRef(null)
 
   const generateProposalText = () => {
     if (!breakdown) return ''
@@ -59,33 +62,60 @@ function ProposalSummary({ breakdown, projectInfo, techStack, modules }) {
 
   const displayText = isEditingProposal ? proposalText : (proposalText || generateProposalText())
 
+  const handleCopyProposal = async () => {
+    try {
+      await navigator.clipboard.writeText(displayText)
+      setCopyFeedback('Copied')
+      if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current)
+      copyTimeoutRef.current = setTimeout(() => setCopyFeedback(''), 2000)
+    } catch (err) {
+      setCopyFeedback('Unable to copy')
+      if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current)
+      copyTimeoutRef.current = setTimeout(() => setCopyFeedback(''), 2000)
+    }
+  }
+
   return (
-    <div className="card">
+    <div className="card proposal-summary-card">
       <div className="space-between" style={{ marginBottom: 14 }}>
         <h3>Client Proposal Summary</h3>
-        <button
-          className="btn btn-ghost"
-          onClick={() => {
-            if (!isEditingProposal) {
-              setProposalText(generateProposalText())
-            }
-            setIsEditingProposal(prev => !prev)
-          }}
-        >
-          {isEditingProposal ? 'Done' : 'Edit'}
-        </button>
+        <div className="proposal-summary-actions">
+          <button
+            className="btn btn-ghost"
+            onClick={handleCopyProposal}
+            title="Copy proposal to clipboard"
+          >
+            {copyFeedback || 'Copy'}
+          </button>
+          <button
+            className="btn btn-ghost"
+            onClick={() => {
+              if (!isEditingProposal) {
+                setProposalText(generateProposalText())
+              }
+              setIsEditingProposal(prev => !prev)
+            }}
+          >
+            {isEditingProposal ? 'Done' : 'Edit'}
+          </button>
+        </div>
       </div>
 
-      <div>
+      <div className="proposal-summary-scroll">
         {isEditingProposal ? (
           <textarea
             value={proposalText}
             onChange={e => setProposalText(e.target.value)}
-            rows={16}
             className="proposal-editor"
           />
         ) : (
-          <pre className="proposal-preview">{displayText}</pre>
+          <FormattedProposalSummary
+            projectInfo={projectInfo}
+            techStack={techStack}
+            modules={modules}
+            breakdown={breakdown}
+            proposalText={displayText}
+          />
         )}
       </div>
 
