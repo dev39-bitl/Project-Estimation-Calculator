@@ -1,0 +1,65 @@
+# Systemd Service for Project Estimation Calculator Backend
+# 
+# Installation:
+# 1. Copy to /etc/systemd/system/estimation-backend.service
+# 2. Update User, Group, WorkingDirectory, and paths as needed
+# 3. Reload daemon: sudo systemctl daemon-reload
+# 4. Enable: sudo systemctl enable estimation-backend
+# 5. Start: sudo systemctl start estimation-backend
+# 6. Check status: sudo systemctl status estimation-backend
+# 
+# Common commands:
+# sudo systemctl status estimation-backend
+# sudo systemctl restart estimation-backend
+# sudo journalctl -u estimation-backend -f
+
+[Unit]
+Description=Brainium Project Estimation Calculator Backend (FastAPI)
+Documentation=https://fastapi.tiangolo.com
+After=network.target
+
+[Service]
+Type=notify
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/estimation-calculator/backend
+
+# Environment variables
+Environment="PATH=/var/www/estimation-calculator/backend/venv/bin"
+Environment="APP_ENV=production"
+EnvironmentFile=/var/www/estimation-calculator/backend/.env
+
+# Start command - run Uvicorn on localhost:8000 (not exposed)
+ExecStart=/var/www/estimation-calculator/backend/venv/bin/uvicorn \
+    app.main:app \
+    --host 127.0.0.1 \
+    --port 8000 \
+    --workers 4 \
+    --loop uvloop
+
+# Restart policy
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+# Logging
+SyslogIdentifier=estimation-backend
+
+# ==================================================
+# Performance and Security
+# ==================================================
+
+# Process limits
+LimitNOFILE=65535
+LimitNPROC=65535
+
+# Security
+PrivateTmp=yes
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/www/estimation-calculator/backend/uploads
+
+[Install]
+WantedBy=multi-user.target

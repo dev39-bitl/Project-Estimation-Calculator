@@ -1,0 +1,115 @@
+# Nginx Configuration for Project Estimation Calculator
+# 
+# Installation:
+# 1. Copy this file to /etc/nginx/sites-available/estimation-calculator
+# 2. Update server_name, root, and ssl paths as needed
+# 3. Enable: sudo ln -s /etc/nginx/sites-available/estimation-calculator /etc/nginx/sites-enabled/
+# 4. Test: sudo nginx -t
+# 5. Reload: sudo systemctl reload nginx
+
+# Redirect HTTP to HTTPS
+server {
+    listen 80;
+    listen [::]:80;
+    server_name estimation-calculator.mydevfactory.com;
+    return 301 https://$server_name$request_uri;
+}
+
+# Main HTTPS server
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name estimation-calculator.mydevfactory.com;
+
+    # ==================================================
+    # SSL CERTIFICATES (Let's Encrypt)
+    # ==================================================
+    # Generate: certbot certonly --standalone -d estimation-calculator.mydevfactory.com
+    # Auto-renewal: sudo systemctl enable --now certbot.timer
+    
+    ssl_certificate /etc/letsencrypt/live/estimation-calculator.mydevfactory.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/estimation-calculator.mydevfactory.com/privkey.pem;
+    
+    # SSL settings
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers HIGH:!aNULL:!MD5;
+    ssl_prefer_server_ciphers on;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_timeout 10m;
+
+    # ==================================================
+    # FRONTEND STATIC FILES
+    # ==================================================
+    # Path to frontend dist folder
+    root /var/www/estimation-calculator/frontend/dist;
+    index index.html;
+
+    # ==================================================
+    # STATIC FILE CACHING
+    # ==================================================
+    location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
+        expires 30d;
+        add_header Cache-Control "public, immutable";
+    }
+
+    # ==================================================
+    # API PROXY
+    # ==================================================
+    # Proxy all /api/* requests to FastAPI backend
+    location /api/ {
+        proxy_pass http://127.0.0.1:8000/api/;
+        proxy_http_version 1.1;
+        
+        # Headers for proper request forwarding
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host $server_name;
+        proxy_set_header X-Forwarded-Port $server_port;
+        
+        # WebSocket support (if needed)
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        
+        # Timeouts
+        proxy_connect_timeout 60s;
+        proxy_send_timeout 60s;
+        proxy_read_timeout 60s;
+        
+        # Allow larger file uploads
+        client_max_body_size 20M;
+    }
+
+    # ==================================================
+    # SPA FALLBACK
+    # ==================================================
+    # Single Page App: route unmatched paths to index.html
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    # ==================================================
+    # SECURITY HEADERS
+    # ==================================================
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-XSS-Protection "1; mode=block" always;
+    add_header Referrer-Policy "no-referrer-when-downgrade" always;
+    add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
+
+    # ==================================================
+    # GZIP COMPRESSION
+    # ==================================================
+    gzip on;
+    gzip_types text/plain text/css text/javascript application/json application/javascript;
+    gzip_min_length 1000;
+    gzip_vary on;
+
+    # ==================================================
+    # LOGGING
+    # ==================================================
+    access_log /var/log/nginx/estimation-calculator-access.log;
+    error_log /var/log/nginx/estimation-calculator-error.log;
+}

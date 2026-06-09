@@ -1,0 +1,158 @@
+#!/bin/bash
+# Deployment Script for Project Estimation Calculator
+# 
+# Usage:
+# sudo ./deploy.sh
+# 
+# This script:
+# 1. Pulls latest code from git
+# 2. Installs/updates backend requirements
+# 3. Builds frontend production bundle
+# 4. Restarts backend service
+# 5. Reloads Nginx
+# 
+# Ensure this script is executable:
+# chmod +x deployment/deploy.sh
+# 
+# And run with sudo for service control:
+# sudo deployment/deploy.sh
+
+set -e  # Exit on error
+
+echo "🚀 Starting deployment..."
+
+# ==================================================
+# CONFIGURATION
+# ==================================================
+
+PROJECT_DIR="/var/www/estimation-calculator"
+BACKEND_DIR="$PROJECT_DIR/backend"
+FRONTEND_DIR="$PROJECT_DIR/frontend"
+BACKEND_VENV="$BACKEND_DIR/venv"
+SERVICE_NAME="estimation-backend"
+NGINX_SERVICE="nginx"
+
+# ==================================================
+# PULL LATEST CODE
+# ==================================================
+
+echo "📥 Pulling latest code from git..."
+cd "$PROJECT_DIR"
+git pull origin main || {
+    echo "❌ Git pull failed. Make sure you have git installed and proper permissions."
+    exit 1
+}
+
+# ==================================================
+# BACKEND UPDATES
+# ==================================================
+
+echo "⚙️  Updating backend dependencies..."
+cd "$BACKEND_DIR"
+
+# Ensure venv exists
+if [ ! -d "$BACKEND_VENV" ]; then
+    echo "📦 Creating Python virtual environment..."
+    python3 -m venv "$BACKEND_VENV"
+fi
+
+# Activate venv and install requirements
+source "$BACKEND_VENV/bin/activate"
+pip install --upgrade pip
+pip install -r requirements.txt
+deactivate
+
+echo "✅ Backend dependencies updated"
+
+# ==================================================
+# FRONTEND BUILD
+# ==================================================
+
+echo "🏗️  Building frontend production bundle..."
+cd "$FRONTEND_DIR"
+
+if [ ! -d "node_modules" ]; then
+    echo "📦 Installing npm dependencies..."
+    npm install
+fi
+
+npm run build
+
+echo "✅ Frontend built successfully"
+
+# ==================================================
+# RESTART BACKEND SERVICE
+# ==================================================
+
+echo "🔄 Restarting backend service..."
+
+if systemctl is-active --quiet "$SERVICE_NAME"; then
+    sudo systemctl restart "$SERVICE_NAME"
+    sleep 2
+    if systemctl is-active --quiet "$SERVICE_NAME"; then
+        echo "✅ Backend service restarted"
+    else
+        echo "❌ Backend service failed to restart"
+        sudo journalctl -u "$SERVICE_NAME" -n 20
+        exit 1
+    fi
+else
+    echo "⚠️  Backend service not running. Starting..."
+    sudo systemctl start "$SERVICE_NAME"
+    sleep 2
+fi
+
+# ==================================================
+# RELOAD NGINX
+# ==================================================
+
+echo "🔄 Reloading Nginx..."
+sudo systemctl reload "$NGINX_SERVICE"
+
+if systemctl is-active --quiet "$NGINX_SERVICE"; then
+    echo "✅ Nginx reloaded"
+else
+    echo "❌ Nginx reload failed"
+    sudo nginx -t
+    exit 1
+fi
+
+# ==================================================
+# HEALTH CHECK
+# ==================================================
+
+echo "🏥 Running health checks..."
+
+# Wait for backend to be ready
+sleep 2
+
+if curl -s http://localhost:8000/api/health | grep -q "healthy"; then
+    echo "✅ Backend health check passed"
+else
+    echo "⚠️  Backend health check failed"
+fi
+
+if curl -s http://localhost/api/health | grep -q "healthy"; then
+    echo "✅ Frontend → Backend → API health check passed"
+else
+    echo "⚠️  Frontend → Backend → API health check failed"
+fi
+
+# ==================================================
+# DEPLOYMENT COMPLETE
+# ==================================================
+
+echo ""
+echo "🎉 Deployment complete!"
+echo ""
+echo "Access the application at:"
+echo "  📱 https://estimation-calculator.mydevfactory.com"
+echo ""
+echo "Check backend status:"
+echo "  sudo systemctl status $SERVICE_NAME"
+echo ""
+echo "View backend logs:"
+echo "  sudo journalctl -u $SERVICE_NAME -f"
+echo ""
+echo "View Nginx logs:"
+echo "  sudo tail -f /var/log/nginx/estimation-calculator-*.log"

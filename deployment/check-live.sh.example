@@ -1,0 +1,138 @@
+#!/bin/bash
+# Health Check Script for Project Estimation Calculator Live Server
+# 
+# Tests:
+# 1. Frontend is accessible
+# 2. /api/health endpoint works
+# 3. API docs are available (optional)
+# 
+# Usage:
+# ./deployment/check-live.sh
+# 
+# Or specify domain:
+# ./deployment/check-live.sh https://estimation-calculator.mydevfactory.com
+
+# ==================================================
+# CONFIGURATION
+# ==================================================
+
+# Get domain from argument or use default
+DOMAIN="${1:-https://estimation-calculator.mydevfactory.com}"
+FRONTEND_URL="$DOMAIN"
+HEALTH_URL="$DOMAIN/api/health"
+DOCS_URL="$DOMAIN/api/docs"
+
+# Colors for output
+GREEN='\033[0;32m'
+RED='\033[0;31m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+# ==================================================
+# HELPER FUNCTIONS
+# ==================================================
+
+check_url() {
+    local url=$1
+    local name=$2
+    
+    echo -e "${BLUE}Checking: $name${NC}"
+    echo "URL: $url"
+    
+    response=$(curl -s -w "\n%{http_code}" "$url" 2>&1)
+    http_code=$(echo "$response" | tail -n1)
+    body=$(echo "$response" | head -n-1)
+    
+    if [ "$http_code" = "200" ]; then
+        echo -e "${GREEN}✓ OK (HTTP $http_code)${NC}"
+        echo "Response: $body"
+        return 0
+    elif [ "$http_code" = "301" ] || [ "$http_code" = "302" ]; then
+        echo -e "${YELLOW}⚠ Redirect (HTTP $http_code)${NC}"
+        return 0
+    else
+        echo -e "${RED}✗ FAILED (HTTP $http_code)${NC}"
+        echo "Response: $body"
+        return 1
+    fi
+    echo ""
+}
+
+# ==================================================
+# PERFORM CHECKS
+# ==================================================
+
+echo -e "${BLUE}================================${NC}"
+echo -e "${BLUE}Health Check for Estimation Calculator${NC}"
+echo -e "${BLUE}Domain: $DOMAIN${NC}"
+echo -e "${BLUE}Time: $(date)${NC}"
+echo -e "${BLUE}================================${NC}"
+echo ""
+
+# Test 1: Frontend is accessible
+echo -e "${BLUE}1. Testing Frontend${NC}"
+if check_url "$FRONTEND_URL" "Frontend main page"; then
+    frontend_ok=1
+else
+    frontend_ok=0
+fi
+echo ""
+
+# Test 2: Health check endpoint
+echo -e "${BLUE}2. Testing API Health Check${NC}"
+if check_url "$HEALTH_URL" "API Health endpoint"; then
+    health_ok=1
+else
+    health_ok=0
+fi
+echo ""
+
+# Test 3: API Documentation (optional)
+echo -e "${BLUE}3. Testing API Documentation (optional)${NC}"
+if check_url "$DOCS_URL" "API Swagger documentation"; then
+    docs_ok=1
+else
+    docs_ok=0
+fi
+echo ""
+
+# ==================================================
+# SUMMARY
+# ==================================================
+
+echo -e "${BLUE}================================${NC}"
+echo -e "${BLUE}Summary${NC}"
+echo -e "${BLUE}================================${NC}"
+
+all_ok=1
+
+if [ $frontend_ok -eq 1 ]; then
+    echo -e "${GREEN}✓ Frontend${NC}"
+else
+    echo -e "${RED}✗ Frontend${NC}"
+    all_ok=0
+fi
+
+if [ $health_ok -eq 1 ]; then
+    echo -e "${GREEN}✓ API Health Check${NC}"
+else
+    echo -e "${RED}✗ API Health Check${NC}"
+    all_ok=0
+fi
+
+if [ $docs_ok -eq 1 ]; then
+    echo -e "${GREEN}✓ API Documentation${NC}"
+else
+    echo -e "${YELLOW}⚠ API Documentation (optional)${NC}"
+fi
+
+echo ""
+
+if [ $all_ok -eq 1 ]; then
+    echo -e "${GREEN}🎉 All critical checks passed!${NC}"
+    exit 0
+else
+    echo -e "${RED}❌ Some checks failed. Please review above.${NC}"
+    exit 1
+fi

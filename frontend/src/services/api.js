@@ -1,6 +1,5 @@
 import axios from 'axios'
-
-const API_BASE_URL = 'http://localhost:8000/api'
+import { API_BASE_URL, getAuthHeaders } from '../config/apiConfig'
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -20,11 +19,26 @@ api.interceptors.request.use(config => {
 api.interceptors.response.use(
   res => res,
   err => {
+    // Log error details for debugging
+    console.error('[API Error]', {
+      url: err.config?.url,
+      status: err.response?.status,
+      message: err.message,
+      data: err.response?.data,
+    })
+
     if (err.response && err.response.status === 401) {
       localStorage.removeItem('access_token')
       localStorage.removeItem('current_user')
       window.location.href = '/'
     }
+
+    // If backend is unreachable
+    if (!err.response && err.message === 'Network Error') {
+      console.error(`[API Error] Cannot connect to server at ${API_BASE_URL}`)
+      console.error('[API Error] Check that the backend API is running and accessible.')
+    }
+
     return Promise.reject(err)
   }
 )
@@ -69,7 +83,12 @@ export const estimateAPI = {
   deleteEstimate: (id) => api.delete(`/estimates/${id}`),
   getEstimateBreakdown: (id) => api.get(`/estimates/${id}/breakdown`),
   markCommentsRead: (id) => api.patch(`/estimates/${id}/comments/read`),
-  fileUrl: (fileId) => `${API_BASE_URL}/files/${fileId}`,
+  fileUrl: (fileId) => {
+    // Construct file URL using the same API base URL
+    // API_BASE_URL already includes /api, so we need to go up one level
+    const baseWithoutApi = API_BASE_URL.replace('/api', '')
+    return `${baseWithoutApi}/api/files/${fileId}`
+  },
 }
 
 export default api

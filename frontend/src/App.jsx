@@ -14,6 +14,7 @@ import AdminLogin from './components/admin/AdminLogin'
 import AdminPanel from './components/admin/AdminPanel'
 import { estimateAPI } from './services/api'
 import { clearAuth } from './services/auth'
+import { API_BASE_URL } from './config/apiConfig'
 import {
   defaultProjectInfo,
   defaultTechStack,
@@ -27,6 +28,18 @@ const WIZARD_STEPS = [
   { id: 'costs', label: 'Cost Settings' },
   { id: 'summary', label: 'Summary & Save' },
 ]
+
+/**
+ * Convert relative file URLs to absolute URLs
+ * Uses the API_BASE_URL to construct proper URLs for both localhost and live server
+ */
+function toAbsoluteFileUrl(url) {
+  if (!url) return ''
+  if (url.startsWith('http://') || url.startsWith('https://')) return url
+  // Remove /api suffix from API_BASE_URL and construct file URL
+  const baseUrl = API_BASE_URL.replace('/api', '')
+  return `${baseUrl}${url}`
+}
 
 function App() {
   const [projectInfo, setProjectInfo] = useState(defaultProjectInfo)
@@ -477,7 +490,7 @@ function App() {
                 <div className="text">{comment.comment_text}</div>
                 {comment.file && (
                   <a
-                    href={comment.file.download_url?.startsWith('http') ? comment.file.download_url : `http://localhost:8000${comment.file.download_url || `/api/files/${comment.file.id}`}`}
+                    href={toAbsoluteFileUrl(comment.file.download_url || `/api/files/${comment.file.id}`)}
                     target="_blank"
                     rel="noreferrer"
                     className="ap-file-link"

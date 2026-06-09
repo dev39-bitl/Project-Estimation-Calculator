@@ -21,11 +21,13 @@ app = FastAPI(
 
 # Configure CORS for frontend communication
 CORS_ORIGINS = [
-    "http://localhost:5173",  # Vite dev server default port
-    "http://localhost:5174",  # Vite dev server alternative port
-    "http://localhost:5175",  # Vite dev server if ports are busy
-    "http://localhost:5176",  # Vite dev server if more ports are busy
-    "http://localhost:3000",  # Alternative frontend port
+    # Local development - Vite dev server
+    "http://localhost:5173",
+    "http://localhost:5174",
+    "http://localhost:5175",
+    "http://localhost:5176",
+    "http://localhost:3000",
+    # Local development - IP address (127.0.0.1)
     "http://127.0.0.1:5173",
     "http://127.0.0.1:5174",
     "http://127.0.0.1:5175",
@@ -33,10 +35,10 @@ CORS_ORIGINS = [
     "http://127.0.0.1:3000",
 ]
 
+# Add production domain from environment variable or use default
+PRODUCTION_DOMAIN = os.getenv("PRODUCTION_DOMAIN", "https://estimation-calculator.mydevfactory.com")
 if os.getenv("ENVIRONMENT") == "production":
-    CORS_ORIGINS = [
-        "https://yourdomain.com",  # Add your production domain
-    ]
+    CORS_ORIGINS.append(PRODUCTION_DOMAIN)
 
 app.add_middleware(
     CORSMiddleware,
@@ -103,6 +105,12 @@ def root():
 @app.get("/health")
 def health_check():
     """Health check endpoint"""
+    return {"status": "healthy", "version": "2.0", "mode": "fixed-cost-estimation"}
+
+
+@app.get("/api/health")
+def api_health_check():
+    """Health check endpoint under /api prefix (for frontend compatibility)"""
     return {"status": "healthy", "version": "2.0", "mode": "fixed-cost-estimation"}
 
 

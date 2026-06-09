@@ -1,9 +1,8 @@
 import axios from 'axios'
-
-const API_BASE_URL = 'http://localhost:8000'
+import { API_BASE_URL } from './config/apiConfig'
 
 const api = axios.create({
-  baseURL: API_BASE_URL,
+  baseURL: API_BASE_URL.replace('/api', ''), // Get base URL without /api suffix
   headers: {
     'Content-Type': 'application/json',
   },

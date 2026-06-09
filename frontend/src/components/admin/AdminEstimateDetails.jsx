@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { adminAPI } from '../../services/adminApi'
 import { exportEstimatePDF } from '../../utils/pdfExport'
+import { API_BASE_URL } from '../../config/apiConfig'
 import brainiumLogo from '../../assets/brainium-logo.png'
 
 const PROJECT_STATUSES = [
@@ -17,7 +18,8 @@ const PROJECT_STATUSES = [
 function toAbsoluteUrl(url) {
   if (!url) return ''
   if (url.startsWith('http://') || url.startsWith('https://')) return url
-  return `http://localhost:8000${url}`
+  const baseUrl = API_BASE_URL.replace('/api', '')
+  return `${baseUrl}${url}`
 }
 
 function statusClass(status) {
