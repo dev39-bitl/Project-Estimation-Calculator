@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react'
 import { authService, saveAuth } from '../services/auth'
 import brainiumLogo from '../assets/brainium-logo.png'
 
-export default function Login({ onLogin, switchToSignup, switchToAdminLogin }) {
+export default function Login({ onLogin, switchToSignup, switchToAdminLogin, switchToVerify }) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
@@ -10,6 +10,7 @@ export default function Login({ onLogin, switchToSignup, switchToAdminLogin }) {
   const [canDismissError, setCanDismissError] = useState(false)
   const [loading, setLoading] = useState(false)
   const [logoFailed, setLogoFailed] = useState(false)
+  const [needsVerify, setNeedsVerify] = useState(false)
   const dismissTimerRef = useRef(null)
 
   useEffect(() => {
@@ -54,6 +55,7 @@ export default function Login({ onLogin, switchToSignup, switchToAdminLogin }) {
         errorMsg = 'Your account has been disabled by the administrator.'
       } else if (detail === 'Please verify your email before logging in.') {
         errorMsg = 'Please verify your email before logging in.'
+        setNeedsVerify(true)
       } else if (err.code === 'ERR_NETWORK' || err.message === 'Network Error') {
         errorMsg = 'Cannot connect to server. Please make sure the backend is running.'
       }
@@ -116,7 +118,7 @@ export default function Login({ onLogin, switchToSignup, switchToAdminLogin }) {
                   value={email}
                   onChange={e => {
                     setEmail(e.target.value)
-                    if (loginError) setLoginError('')
+                    if (loginError) { setLoginError(''); setNeedsVerify(false) }
                   }}
                   placeholder="you@company.com"
                   required
@@ -130,7 +132,7 @@ export default function Login({ onLogin, switchToSignup, switchToAdminLogin }) {
                     value={password}
                     onChange={e => {
                       setPassword(e.target.value)
-                      if (loginError) setLoginError('')
+                      if (loginError) { setLoginError(''); setNeedsVerify(false) }
                     }}
                     placeholder="••••••••"
                     required
@@ -152,6 +154,17 @@ export default function Login({ onLogin, switchToSignup, switchToAdminLogin }) {
               <p>Don't have an account?{' '}
                 <button type="button" className="auth-link-btn" onClick={switchToSignup}>Create account</button>
               </p>
+              {needsVerify && switchToVerify && (
+                <p>
+                  <button
+                    type="button"
+                    className="auth-link-btn"
+                    onClick={() => switchToVerify(email)}
+                  >
+                    Verify your email →
+                  </button>
+                </p>
+              )}
               {switchToAdminLogin && (
                 <p className="auth-admin-link">
                   <button type="button" className="auth-link-btn" onClick={switchToAdminLogin}>Admin Login →</button>

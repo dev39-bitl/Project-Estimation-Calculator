@@ -151,11 +151,29 @@ class User(Base):
     company_name = Column(String(255), nullable=True)
     role = Column(String(30), default="estimator")
     is_active = Column(Boolean, default=True)
+    is_email_verified = Column(Boolean, default=False)
+    email_verified_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
     estimates = relationship("Estimate", back_populates="user")
     comments = relationship("EstimateComment", back_populates="user")
+    verifications = relationship("EmailVerification", back_populates="user", cascade="all, delete-orphan")
+
+
+class EmailVerification(Base):
+    """Stores hashed one-time verification codes for email confirmation."""
+    __tablename__ = "email_verifications"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    email = Column(String(255), nullable=False)
+    code_hash = Column(String(255), nullable=False)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    is_used = Column(Boolean, default=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    user = relationship("User", back_populates="verifications")
 
 
 class EstimateVersion(Base):

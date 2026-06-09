@@ -18,12 +18,22 @@ class UserCreate(UserBase):
 class User(UserBase):
     id: int
     is_active: bool
+    is_email_verified: bool = False
     created_at: datetime
     updated_at: Optional[datetime] = None
     role: str
 
     class Config:
         from_attributes = True
+
+
+class VerifyEmailRequest(BaseModel):
+    email: str
+    code: str
+
+
+class ResendVerificationRequest(BaseModel):
+    email: str
 
 
 class Token(BaseModel):

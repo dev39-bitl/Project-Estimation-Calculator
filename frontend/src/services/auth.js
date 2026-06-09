@@ -22,6 +22,26 @@ export const authService = {
       throw err
     })
   },
+  verifyEmail: (email, code) => {
+    console.log('[Auth] Verify email request for:', email)
+    return api.post('/auth/verify-email', { email, code }).then(res => {
+      console.log('[Auth] Verify email success:', res.status)
+      return res
+    }).catch(err => {
+      console.error('[Auth] Verify email error:', err.response?.status, err.response?.data?.detail || err.message)
+      throw err
+    })
+  },
+  resendVerificationCode: (email) => {
+    console.log('[Auth] Resend verification code for:', email)
+    return api.post('/auth/resend-verification-code', { email }).then(res => {
+      console.log('[Auth] Resend code success:', res.status)
+      return res
+    }).catch(err => {
+      console.error('[Auth] Resend code error:', err.response?.status, err.response?.data?.detail || err.message)
+      throw err
+    })
+  },
   me: () => api.get('/auth/me'),
 }
 

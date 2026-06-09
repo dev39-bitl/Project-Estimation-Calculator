@@ -52,6 +52,11 @@ def migrate_sqlite_schema():
         "last_change_comment": "TEXT",
     }
 
+    user_columns = {
+        "is_email_verified": "BOOLEAN DEFAULT 0",
+        "email_verified_at": "DATETIME",
+    }
+
     with engine.begin() as conn:
         existing_cols = {
             row[1] for row in conn.execute(text("PRAGMA table_info(estimates)"))
@@ -59,6 +64,29 @@ def migrate_sqlite_schema():
         for col_name, col_type in estimate_columns.items():
             if col_name not in existing_cols:
                 conn.execute(text(f"ALTER TABLE estimates ADD COLUMN {col_name} {col_type}"))
+
+        # Users table additions
+        user_existing_cols = {
+            row[1] for row in conn.execute(text("PRAGMA table_info(users)"))
+        }
+        for col_name, col_type in user_columns.items():
+            if col_name not in user_existing_cols:
+                conn.execute(text(f"ALTER TABLE users ADD COLUMN {col_name} {col_type}"))
+
+        conn.execute(text(
+            """
+            CREATE TABLE IF NOT EXISTS email_verifications (
+                id INTEGER PRIMARY KEY,
+                user_id INTEGER NOT NULL,
+                email VARCHAR(255) NOT NULL,
+                code_hash VARCHAR(255) NOT NULL,
+                expires_at DATETIME NOT NULL,
+                is_used BOOLEAN DEFAULT 0,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY(user_id) REFERENCES users(id)
+            )
+            """
+        ))
 
         conn.execute(text(
             """

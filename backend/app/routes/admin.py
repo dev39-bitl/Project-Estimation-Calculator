@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from ..database import get_db
 from ..auth import get_current_user, require_admin
 from .. import crud, schemas, models
+from ..email_service import send_notification_email
 import csv
 from fastapi.responses import StreamingResponse
 from io import StringIO
@@ -206,6 +207,14 @@ def lock_estimate(estimate_id: int, db: Session = Depends(get_db), current_user:
         raise HTTPException(status_code=404, detail="Estimate not found")
     estimate.is_editable = False
     db.commit()
+    # Notify estimator
+    if estimate.created_by_email:
+        send_notification_email(
+            to_email=estimate.created_by_email,
+            subject="Your estimate has been locked",
+            message=f"Admin has locked editing for your estimate. You can still view it in read-only mode.",
+            estimate_title=estimate.name,
+        )
     return {"message": "Estimate locked", "is_editable": False}
 
 
@@ -217,6 +226,14 @@ def unlock_estimate(estimate_id: int, db: Session = Depends(get_db), current_use
         raise HTTPException(status_code=404, detail="Estimate not found")
     estimate.is_editable = True
     db.commit()
+    # Notify estimator
+    if estimate.created_by_email:
+        send_notification_email(
+            to_email=estimate.created_by_email,
+            subject="Your estimate has been unlocked",
+            message="Admin has re-enabled editing for your estimate. You can now update it.",
+            estimate_title=estimate.name,
+        )
     return {"message": "Estimate unlocked", "is_editable": True}
 
 
@@ -245,6 +262,14 @@ def update_estimate_status(
     estimate.status = status
     db.commit()
     db.refresh(estimate)
+    # Notify estimator
+    if estimate.created_by_email:
+        send_notification_email(
+            to_email=estimate.created_by_email,
+            subject=f"Estimate status updated: {status}",
+            message=f"The status of your estimate has been changed to '{status}' by an admin.",
+            estimate_title=estimate.name,
+        )
     return estimate
 
 
@@ -296,6 +321,14 @@ async def add_comment(
     )
     if comment.file:
         comment.file.download_url = f"/api/files/{comment.file.id}"
+    # Notify estimator
+    if estimate.created_by_email:
+        send_notification_email(
+            to_email=estimate.created_by_email,
+            subject="New admin comment on your estimate",
+            message=f"An admin has added a comment: \"{comment_text.strip()[:200]}\"",
+            estimate_title=estimate.name,
+        )
     return comment
 
 

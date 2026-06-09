@@ -9,6 +9,7 @@ import ProposalSummary from './components/ProposalSummary'
 import SavedEstimates from './components/SavedEstimates'
 import Login from './components/Login'
 import Signup from './components/Signup'
+import VerifyEmail from './components/VerifyEmail'
 import UserBadge from './components/UserBadge'
 import AdminLogin from './components/admin/AdminLogin'
 import AdminPanel from './components/admin/AdminPanel'
@@ -52,6 +53,7 @@ function App() {
     }
   })
   const [authView, setAuthView] = useState('login')
+  const [verifyEmail, setVerifyEmail] = useState('')
   const [techStack, setTechStack] = useState(defaultTechStack)
   const [internalCosts, setInternalCosts] = useState(defaultInternalCosts)
   const [modules, setModules] = useState([
@@ -662,12 +664,32 @@ function App() {
         onLogin={handleLogin}
         switchToSignup={() => setAuthView('signup')}
         switchToAdminLogin={() => setAuthView('admin-login')}
+        switchToVerify={(email) => { setVerifyEmail(email || ''); setAuthView('verify-email') }}
       />
     )
   }
 
   if (!currentUser && authView === 'signup') {
-    return <Signup onSignup={handleLogin} switchToLogin={() => setAuthView('login')} />
+    return (
+      <Signup
+        onSignup={handleLogin}
+        switchToLogin={() => setAuthView('login')}
+        switchToVerify={(email) => { setVerifyEmail(email || ''); setAuthView('verify-email') }}
+      />
+    )
+  }
+
+  if (!currentUser && authView === 'verify-email') {
+    return (
+      <VerifyEmail
+        email={verifyEmail}
+        switchToLogin={() => setAuthView('login')}
+        onVerified={(user) => {
+          if (user) handleLogin(user)
+          else setAuthView('login')
+        }}
+      />
+    )
   }
 
   return (

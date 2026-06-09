@@ -75,6 +75,7 @@ def startup_event():
                 hashed_password=get_password_hash('Admin@123'),
                 role='admin',
                 is_active=True,
+                is_email_verified=True,  # Admin is pre-verified
             )
             db.add(admin_obj)
             db.commit()
@@ -87,6 +88,11 @@ def startup_event():
                 admin_user.hashed_password = new_hash
                 db.commit()
                 print("[startup] Admin password hash refreshed to SHA-256")
+            # Ensure existing admin is verified (idempotent)
+            if not admin_user.is_email_verified:
+                admin_user.is_email_verified = True
+                db.commit()
+                print("[startup] Admin email marked as verified")
     finally:
         db.close()
 

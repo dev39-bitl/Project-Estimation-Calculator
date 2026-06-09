@@ -5,9 +5,49 @@ from sqlalchemy.orm import Session
 from .. import crud, schemas, calculator, models
 from ..database import get_db
 from ..auth import get_current_user
+from ..email_service import send_notification_email
 from pydantic import ValidationError
 
 router = APIRouter(prefix="/api", tags=["estimates"])
+
+
+# ---------------------------------------------------------------------------
+# Notification helpers
+# ---------------------------------------------------------------------------
+
+def _get_admin_emails(db: Session) -> list[str]:
+    """Return email addresses of all active admin users."""
+    admins = db.query(models.User).filter(
+        models.User.role == "admin",
+        models.User.is_active == True,  # noqa: E712
+    ).all()
+    return [a.email for a in admins if a.email]
+
+
+def _notify_admins_new_estimate(db: Session, estimate: models.Estimate, estimator: models.User) -> None:
+    for email in _get_admin_emails(db):
+        send_notification_email(
+            to_email=email,
+            subject="New estimate submitted",
+            message=(
+                f"Estimator <strong>{estimator.full_name}</strong> ({estimator.email}) "
+                f"has submitted a new estimate."
+            ),
+            estimate_title=estimate.name,
+        )
+
+
+def _notify_admins_estimate_updated(db: Session, estimate: models.Estimate, estimator: models.User) -> None:
+    for email in _get_admin_emails(db):
+        send_notification_email(
+            to_email=email,
+            subject="Estimate updated",
+            message=(
+                f"Estimator <strong>{estimator.full_name}</strong> ({estimator.email}) "
+                f"has updated an estimate (version {estimate.version_number})."
+            ),
+            estimate_title=estimate.name,
+        )
 
 
 def _has_minimum_draft_data(payload: dict) -> bool:
@@ -54,11 +94,15 @@ def create_estimate(estimate_in: dict = Body(...), db: Session = Depends(get_db)
         # If modules or project_info present, treat as fixed-cost estimate
         if isinstance(estimate_in, dict) and ("modules" in estimate_in or "project_info" in estimate_in or estimate_in.get("is_fixed_cost")):
             fixed = schemas.EstimateCreateFixedCost(**estimate_in)
-            return crud.create_estimate_fixed_cost(db, fixed, user=current_user)
+            result = crud.create_estimate_fixed_cost(db, fixed, user=current_user)
+        else:
+            # Otherwise try legacy schema
+            legacy = schemas.EstimateCreateLegacy(**estimate_in)
+            result = crud.create_estimate_legacy(db, legacy, user=current_user)
 
-        # Otherwise try legacy schema
-        legacy = schemas.EstimateCreateLegacy(**estimate_in)
-        return crud.create_estimate_legacy(db, legacy, user=current_user)
+        # Notify all admins about the new estimate
+        _notify_admins_new_estimate(db, result, current_user)
+        return result
     except ValidationError as e:
         raise HTTPException(status_code=422, detail=e.errors())
     except Exception as e:
@@ -210,6 +254,9 @@ def update_estimate(estimate_id: int, estimate_in: dict = Body(...), db: Session
 
         if not updated:
             raise HTTPException(status_code=404, detail="Estimate not found")
+        # Notify admins about the update (skip for drafts)
+        if not (db_estimate.is_draft or str(db_estimate.status or '').lower() == 'draft'):
+            _notify_admins_estimate_updated(db, updated, current_user)
         return updated
     except ValidationError as e:
         raise HTTPException(status_code=422, detail=e.errors())

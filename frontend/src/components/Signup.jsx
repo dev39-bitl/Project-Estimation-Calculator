@@ -1,8 +1,8 @@
 import React, { useState } from 'react'
-import { authService, saveAuth } from '../services/auth'
+import { authService } from '../services/auth'
 import brainiumLogo from '../assets/brainium-logo.png'
 
-export default function Signup({ onSignup, switchToLogin }) {
+export default function Signup({ onSignup, switchToLogin, switchToVerify }) {
   const [fullName, setFullName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -46,9 +46,10 @@ export default function Signup({ onSignup, switchToLogin }) {
     try {
       const resp = await authService.signup({ full_name: fullName, email, password })
       if (resp?.data?.id) {
-        const loginResp = await authService.login({ email, password })
-        saveAuth(loginResp.data.access_token, loginResp.data.user)
-        onSignup(loginResp.data.user)
+        // Signup succeeded → show email verification screen
+        if (switchToVerify) {
+          switchToVerify(email)
+        }
       } else {
         setError('Signup failed')
       }
