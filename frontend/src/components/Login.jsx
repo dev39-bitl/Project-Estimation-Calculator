@@ -92,6 +92,15 @@ export default function Login({ onLogin, switchToSignup, switchToAdminLogin, swi
 
         <div className="auth-form-panel">
           <div className="auth-form-card">
+            <div className="auth-mobile-logo-wrap">
+              <div className="auth-mobile-logo-box">
+                {!logoFailed ? (
+                  <img src={brainiumLogo} alt="Brainium" onError={() => setLogoFailed(true)} />
+                ) : (
+                  <span className="auth-mobile-logo-fallback">Brainium</span>
+                )}
+              </div>
+            </div>
             <div className="auth-form-header">
               <h3>Welcome back</h3>
               <p>Sign in to your estimator account</p>

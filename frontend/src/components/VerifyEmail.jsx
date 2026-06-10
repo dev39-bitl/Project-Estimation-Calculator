@@ -113,6 +113,15 @@ export default function VerifyEmail({ email: initialEmail, switchToLogin, onVeri
         {/* Right form panel */}
         <div className="auth-form-panel">
           <div className="auth-form-card">
+            <div className="auth-mobile-logo-wrap">
+              <div className="auth-mobile-logo-box">
+                {!logoFailed ? (
+                  <img src={brainiumLogo} alt="Brainium" onError={() => setLogoFailed(true)} />
+                ) : (
+                  <span className="auth-mobile-logo-fallback">Brainium</span>
+                )}
+              </div>
+            </div>
             <div className="auth-form-header">
               <h3>Verify your email</h3>
               <p>

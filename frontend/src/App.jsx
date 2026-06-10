@@ -19,6 +19,7 @@ import AdminPanel from './components/admin/AdminPanel'
 import { estimateAPI } from './services/api'
 import { clearAuth } from './services/auth'
 import { API_BASE_URL } from './config/apiConfig'
+import { useTheme } from './hooks/useTheme'
 import brainiumLogo from './assets/brainium-logo.png'
 import {
   defaultProjectInfo,
@@ -47,6 +48,7 @@ function toAbsoluteFileUrl(url) {
 }
 
 function App() {
+  const { theme, toggleTheme } = useTheme()
   const [projectInfo, setProjectInfo] = useState(defaultProjectInfo)
   const [currentUser, setCurrentUser] = useState(() => {
     try {
@@ -840,35 +842,65 @@ function App() {
 
   if (!currentUser && authView === 'login') {
     return (
-      <Login
-        onLogin={handleLogin}
-        switchToSignup={() => setAuthView('signup')}
-        switchToAdminLogin={() => setAuthView('admin-login')}
-        switchToVerify={(email) => { setVerifyEmail(email || ''); setAuthView('verify-email') }}
-      />
+      <div style={{ position: 'relative' }}>
+        <button
+          className="theme-toggle-btn"
+          onClick={toggleTheme}
+          style={{ position: 'fixed', top: 16, right: 16, zIndex: 9999 }}
+          aria-label={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+        >
+          {theme === 'dark' ? '☀️ Light' : '🌙 Dark'}
+        </button>
+        <Login
+          onLogin={handleLogin}
+          switchToSignup={() => setAuthView('signup')}
+          switchToAdminLogin={() => setAuthView('admin-login')}
+          switchToVerify={(email) => { setVerifyEmail(email || ''); setAuthView('verify-email') }}
+        />
+      </div>
     )
   }
 
   if (!currentUser && authView === 'signup') {
     return (
-      <Signup
-        onSignup={handleLogin}
-        switchToLogin={() => setAuthView('login')}
-        switchToVerify={(email) => { setVerifyEmail(email || ''); setAuthView('verify-email') }}
-      />
+      <div style={{ position: 'relative' }}>
+        <button
+          className="theme-toggle-btn"
+          onClick={toggleTheme}
+          style={{ position: 'fixed', top: 16, right: 16, zIndex: 9999 }}
+          aria-label={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+        >
+          {theme === 'dark' ? '☀️ Light' : '🌙 Dark'}
+        </button>
+        <Signup
+          onSignup={handleLogin}
+          switchToLogin={() => setAuthView('login')}
+          switchToVerify={(email) => { setVerifyEmail(email || ''); setAuthView('verify-email') }}
+        />
+      </div>
     )
   }
 
   if (!currentUser && authView === 'verify-email') {
     return (
-      <VerifyEmail
-        email={verifyEmail}
-        switchToLogin={() => setAuthView('login')}
-        onVerified={(user) => {
-          if (user) handleLogin(user)
-          else setAuthView('login')
-        }}
-      />
+      <div style={{ position: 'relative' }}>
+        <button
+          className="theme-toggle-btn"
+          onClick={toggleTheme}
+          style={{ position: 'fixed', top: 16, right: 16, zIndex: 9999 }}
+          aria-label={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+        >
+          {theme === 'dark' ? '☀️ Light' : '🌙 Dark'}
+        </button>
+        <VerifyEmail
+          email={verifyEmail}
+          switchToLogin={() => setAuthView('login')}
+          onVerified={(user) => {
+            if (user) handleLogin(user)
+            else setAuthView('login')
+          }}
+        />
+      </div>
     )
   }
 
@@ -897,14 +929,21 @@ function App() {
               <button
                 className={`${estimatorView === 'saved' ? 'primary-action-btn' : 'btn btn-secondary'}`}
                 onClick={() => setEstimatorView('saved')}
-              >
-                My Estimates
+              >                My Estimates
               </button>
               <button
                 className={`btn ${estimatorView === 'profile' ? 'btn-primary' : 'btn-secondary'}`}
                 onClick={() => setEstimatorView('profile')}
               >
                 Profile
+              </button>
+              <button
+                className="theme-toggle-btn"
+                onClick={toggleTheme}
+                title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+                aria-label={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+              >
+                {theme === 'dark' ? '☀️ Light' : '🌙 Dark'}
               </button>
               <UserBadge user={currentUser} onLogout={handleLogout} />
             </div>
