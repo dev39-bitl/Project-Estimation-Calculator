@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { estimateAPI } from '../services/api'
 
 const PROJECT_STATUSES = [
@@ -44,6 +45,9 @@ function SavedEstimates({ refreshKey, onLoad, onAddNew }) {
   const [error, setError] = useState('')
   const [currentPage, setCurrentPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
+  const [openMenuEstimateId, setOpenMenuEstimateId] = useState(null)
+  const [menuPosition, setMenuPosition] = useState({ top: 0, right: 0 })
+  const openMenuRef = useRef(null)
 
   const fetchAll = async () => {
     setLoading(true)
@@ -61,6 +65,32 @@ function SavedEstimates({ refreshKey, onLoad, onAddNew }) {
   useEffect(() => {
     fetchAll()
   }, [refreshKey])
+
+  useEffect(() => {
+    if (openMenuEstimateId === null) return
+
+    const handleOutsideClick = (event) => {
+      if (openMenuRef.current && !openMenuRef.current.contains(event.target)) {
+        setOpenMenuEstimateId(null)
+      }
+    }
+
+    const handleEscape = (event) => {
+      if (event.key === 'Escape') setOpenMenuEstimateId(null)
+    }
+
+    // Small delay so the click that opened the menu doesn't immediately close it
+    const timer = setTimeout(() => {
+      document.addEventListener('mousedown', handleOutsideClick)
+      document.addEventListener('keydown', handleEscape)
+    }, 0)
+
+    return () => {
+      clearTimeout(timer)
+      document.removeEventListener('mousedown', handleOutsideClick)
+      document.removeEventListener('keydown', handleEscape)
+    }
+  }, [openMenuEstimateId])
 
   const filteredEstimates = useMemo(() => {
     const query = searchText.trim().toLowerCase()
@@ -147,6 +177,10 @@ function SavedEstimates({ refreshKey, onLoad, onAddNew }) {
     setCurrentPage(1)
   }
 
+  useEffect(() => {
+    setOpenMenuEstimateId(null)
+  }, [currentPage, pageSize, searchText, statusFilter, editableFilter, dateFilter, sortConfig])
+
   const paginatedEstimates = useMemo(() => {
     const startIndex = (currentPage - 1) * pageSize
     const endIndex = startIndex + pageSize
@@ -179,6 +213,22 @@ function SavedEstimates({ refreshKey, onLoad, onAddNew }) {
     }
   }
 
+  const handleView = (item) => {
+    setOpenMenuEstimateId(null)
+    onLoad && onLoad(item, false)
+  }
+
+  const handleEditOrContinue = (item, isEditable) => {
+    if (!isEditable) return
+    setOpenMenuEstimateId(null)
+    onLoad && onLoad(item, true)
+  }
+
+  const handleDeleteFromMenu = async (id) => {
+    setOpenMenuEstimateId(null)
+    await handleDelete(id)
+  }
+
   if (loading) {
     return (
       <div className="saved-dashboard">
@@ -201,7 +251,7 @@ function SavedEstimates({ refreshKey, onLoad, onAddNew }) {
         </div>
       </div>
 
-      <div className="saved-filters" style={{ marginTop: 12 }}>
+      <div className="saved-filters filters-row" style={{ marginTop: 12 }}>
         <input
           className="saved-filters-search"
           type="text"
@@ -229,80 +279,117 @@ function SavedEstimates({ refreshKey, onLoad, onAddNew }) {
         <button className="btn btn-ghost" onClick={clearFilters}>Clear Filters</button>
       </div>
 
-      {error && <div className="error-message" style={{ marginTop: 10 }}>{error}</div>}
+      {error && estimates.length === 0 && <div className="error-message" style={{ marginTop: 10 }}>{error}</div>}
 
-      <div className="saved-list">
-        <div className="saved-list-head">
-          <span className="saved-sortable" onClick={() => toggleSort('name')}>Project Name{sortIndicator('name')}</span>
-          <span className="saved-sortable" onClick={() => toggleSort('client_name')}>Client Name{sortIndicator('client_name')}</span>
-          <span className="saved-sortable" onClick={() => toggleSort('total_hours')}>Total Hours{sortIndicator('total_hours')}</span>
-          <span className="saved-sortable" onClick={() => toggleSort('final_cost')}>Final Fixed Cost{sortIndicator('final_cost')}</span>
-          <span>Version</span>
-          <span className="saved-sortable" onClick={() => toggleSort('status')}>Status{sortIndicator('status')}</span>
-          <span className="saved-sortable" onClick={() => toggleSort('editable')}>Editable / Locked{sortIndicator('editable')}</span>
-          <span className="saved-sortable" onClick={() => toggleSort('updated_at')}>Updated Date{sortIndicator('updated_at')}</span>
-          <span>Actions</span>
-        </div>
+      <div className="saved-list estimates-table-wrapper">
+        <table className="estimates-table">
+          <colgroup>
+            <col style={{ width: '22%' }} />
+            <col style={{ width: '12%' }} />
+            <col style={{ width: '9%' }} />
+            <col style={{ width: '11%' }} />
+            <col style={{ width: '7%' }} />
+            <col style={{ width: '13%' }} />
+            <col style={{ width: '10%' }} />
+            <col style={{ width: '12%' }} />
+            <col style={{ width: '4%' }} />
+          </colgroup>
+          <thead>
+            <tr className="saved-list-head">
+              <th className="saved-sortable" onClick={() => toggleSort('name')}>Project Name{sortIndicator('name')}</th>
+              <th className="saved-sortable" onClick={() => toggleSort('client_name')}>Client Name{sortIndicator('client_name')}</th>
+              <th className="saved-sortable" onClick={() => toggleSort('total_hours')}>Total Hours{sortIndicator('total_hours')}</th>
+              <th className="saved-sortable" onClick={() => toggleSort('final_cost')}>Final Fixed Cost{sortIndicator('final_cost')}</th>
+              <th>Version</th>
+              <th className="saved-sortable" onClick={() => toggleSort('status')}>Status{sortIndicator('status')}</th>
+              <th className="saved-sortable" onClick={() => toggleSort('editable')}>Editable / Locked{sortIndicator('editable')}</th>
+              <th className="saved-sortable" onClick={() => toggleSort('updated_at')}>Updated Date{sortIndicator('updated_at')}</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {paginatedEstimates.map(item => {
+              const totalHours = item.total_estimated_hours ?? item.effort_hours ?? 0
+              const finalCost = item.total_fixed_cost ?? item.total_cost ?? 0
+              const version = item.version_number || 1
+              const status = item.status || 'Estimation Initiation'
+              const isEditable = item.is_editable !== false
+              const isDraft = item.is_draft || String(status).toLowerCase() === 'draft'
 
-        {filteredEstimates.length === 0 ? (
-          <div className="saved-empty">No saved estimates found.</div>
-        ) : (
-          paginatedEstimates.map(item => {
-            const totalHours = item.total_estimated_hours ?? item.effort_hours ?? 0
-            const finalCost = item.total_fixed_cost ?? item.total_cost ?? 0
-            const version = item.version_number || 1
-            const status = item.status || 'Estimation Initiation'
-            const isEditable = item.is_editable !== false
-            const isDraft = item.is_draft || String(status).toLowerCase() === 'draft'
-
-            return (
-              <div key={item.id} className="saved-list-row">
-                <span>{item.name || '-'}</span>
-                <span>{item.client_name || '-'}</span>
-                <span>{Number(totalHours).toFixed(1)}h</span>
-                <span>${Number(finalCost || 0).toLocaleString()}</span>
-                <span>
-                  <span className="badge badge-version">v{version}</span>
-                </span>
-                <span>
-                  <span className={`badge badge-status ${statusToClass(status)}`}>
-                    {status}
-                  </span>
-                </span>
-                <span>
-                  <span className={`badge ${isEditable ? 'badge-success' : 'badge-warning'}`}>
-                    {isEditable ? 'Editable' : 'Locked'}
-                  </span>
-                </span>
-                <span>{formatDate(item.updated_at || item.created_at)}</span>
-                <span className="saved-actions">
-                  <button className="btn btn-ghost" onClick={() => onLoad && onLoad(item, false)} title="View estimate">View</button>
-                  <button
-                    className="btn btn-ghost"
-                    onClick={() => onLoad && onLoad(item, true)}
-                    disabled={!isEditable}
-                    title={!isEditable ? 'Locked by Admin' : (isDraft ? 'Continue draft' : 'Edit estimate')}
-                  >
-                    {isDraft ? 'Continue' : 'Edit'}
-                  </button>
-                  <button className="btn btn-ghost" onClick={() => handleDelete(item.id)} title="Delete estimate">Delete</button>
-                  {(item.comments || []).filter(c => !c.is_read_by_estimator).length > 0 && (
-                    <span className="badge badge-warning" title="Admin comments available">
-                      💬 {(item.comments || []).filter(c => !c.is_read_by_estimator).length}
+              return (
+                <tr key={item.id} className="saved-list-row">
+                  <td data-label="Project Name">
+                    <button
+                      className="estimate-name-link"
+                      onClick={() => handleView(item)}
+                      title="Open in view mode"
+                      aria-label={`Open ${item.name || 'estimate'} in view mode`}
+                      type="button"
+                    >
+                      {item.name || '-'}
+                    </button>
+                  </td>
+                  <td data-label="Client Name">{item.client_name || '-'}</td>
+                  <td data-label="Total Hours">{Number(totalHours).toFixed(1)}h</td>
+                  <td data-label="Final Fixed Cost">${Number(finalCost || 0).toLocaleString()}</td>
+                  <td data-label="Version">
+                    <span className="badge badge-version">v{version}</span>
+                  </td>
+                  <td data-label="Status">
+                    <span className={`badge badge-status ${statusToClass(status)}`}>
+                      {status}
                     </span>
-                  )}
-                </span>
-              </div>
-            )
-          })
-        )}
+                  </td>
+                  <td data-label="Editable / Locked">
+                    <span className={`badge ${isEditable ? 'badge-success' : 'badge-warning'}`}>
+                      {isEditable ? 'Editable' : 'Locked'}
+                    </span>
+                  </td>
+                  <td data-label="Updated Date"><span className="date-cell">{formatDate(item.updated_at || item.created_at)}</span></td>
+                  <td data-label="Actions" className="actions-cell">
+                    <div className="row-actions-menu">
+                      <button
+                        className="row-action-trigger"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          if (openMenuEstimateId === item.id) {
+                            setOpenMenuEstimateId(null)
+                          } else {
+                            const rect = e.currentTarget.getBoundingClientRect()
+                            setMenuPosition({
+                              top: rect.bottom + 8,
+                              right: window.innerWidth - rect.right,
+                            })
+                            setOpenMenuEstimateId(item.id)
+                          }
+                        }}
+                        title="Estimate actions"
+                        aria-label="Open estimate actions"
+                        aria-expanded={openMenuEstimateId === item.id}
+                        type="button"
+                      >
+                        ⋮
+                      </button>
+                    </div>
+                    {(item.comments || []).filter(c => !c.is_read_by_estimator).length > 0 && (
+                      <span className="badge badge-warning" title="Admin comments available">
+                        💬 {(item.comments || []).filter(c => !c.is_read_by_estimator).length}
+                      </span>
+                    )}
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+        {filteredEstimates.length === 0 && <div className="saved-empty">No saved estimates found.</div>}
       </div>
 
       {filteredEstimates.length > 0 && (
-        <div className="pagination-controls" style={{ marginTop: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <label style={{ fontSize: '0.9rem' }}>Items per page:</label>
-            <select value={pageSize} onChange={handlePageSizeChange} style={{ padding: '6px 10px', borderRadius: '8px', border: '1px solid #2B4564', background: '#10243A', color: '#FFFFFF' }}>
+        <div className="pagination-footer" style={{ marginTop: 16 }}>
+          <div className="items-per-page-control">
+            <label htmlFor="items-per-page-select" style={{ fontSize: '0.9rem' }}>Items per page:</label>
+            <select id="items-per-page-select" className="items-per-page-select" value={pageSize} onChange={handlePageSizeChange}>
               <option value={10}>10</option>
               <option value={20}>20</option>
               <option value={50}>50</option>
@@ -310,11 +397,11 @@ function SavedEstimates({ refreshKey, onLoad, onAddNew }) {
             </select>
           </div>
 
-          <div style={{ fontSize: '0.9rem', color: '#C9D6EA' }}>
+          <div className="pagination-meta" style={{ fontSize: '0.9rem', color: '#C9D6EA' }}>
             Showing {(currentPage - 1) * pageSize + 1}-{Math.min(currentPage * pageSize, filteredEstimates.length)} of {filteredEstimates.length} estimates
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div className="pagination-controls" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <button className="btn btn-secondary" onClick={handlePrevPage} disabled={currentPage === 1}>← Previous</button>
             <span style={{ fontSize: '0.9rem', color: '#C9D6EA', minWidth: '60px', textAlign: 'center' }}>
               Page {currentPage} of {totalPages}
@@ -323,6 +410,52 @@ function SavedEstimates({ refreshKey, onLoad, onAddNew }) {
           </div>
         </div>
       )}
+
+      {/* Portal dropdown — renders at document.body, escapes all overflow clipping */}
+      {(() => {
+        if (openMenuEstimateId === null) return null
+        const openItem = paginatedEstimates.find(item => item.id === openMenuEstimateId)
+        if (!openItem) return null
+        const isEditable = openItem.is_editable !== false
+        const isDraft = openItem.is_draft || String(openItem.status || '').toLowerCase() === 'draft'
+        return createPortal(
+          <div
+            ref={openMenuRef}
+            className="row-action-dropdown"
+            style={{
+              position: 'fixed',
+              top: menuPosition.top,
+              right: menuPosition.right,
+              zIndex: 999999,
+            }}
+            role="menu"
+            onClick={e => e.stopPropagation()}
+          >
+            <button className="row-action-item" onClick={() => handleView(openItem)} type="button" role="menuitem">
+              View
+            </button>
+            {isEditable && (
+              <button
+                className="row-action-item"
+                onClick={() => handleEditOrContinue(openItem, isEditable)}
+                type="button"
+                role="menuitem"
+              >
+                {isDraft ? 'Continue' : 'Edit'}
+              </button>
+            )}
+            <button
+              className="row-action-item danger"
+              onClick={() => handleDeleteFromMenu(openItem.id)}
+              type="button"
+              role="menuitem"
+            >
+              Delete
+            </button>
+          </div>,
+          document.body
+        )
+      })()}
     </div>
   )
 }

@@ -11,8 +11,8 @@ export default function UserBadge({ user, onLogout }) {
   if (!user) return null
   return (
     <div className="user-header-actions">
-      <span className="user-display-name">{user.full_name}</span>
-      <button className="btn btn-ghost" onClick={logout}>Logout</button>
+      <span className="user-display-name user-pill">{user.full_name}</span>
+      <button className="header-icon-btn" onClick={logout} title="Logout" aria-label="Logout" type="button">⎋</button>
     </div>
   )
 }

@@ -112,6 +112,14 @@ function App() {
 
   const isViewMode = wizardMode === 'view'
 
+  useEffect(() => {
+    const isAuthPage = !currentUser && (authView === 'login' || authView === 'signup' || authView === 'verify-email')
+    document.body.classList.toggle('auth-page-active', isAuthPage)
+    return () => {
+      document.body.classList.remove('auth-page-active')
+    }
+  }, [currentUser, authView])
+
   const calculateBreakdown = useCallback(async () => {
     setError('')
     try {
@@ -844,9 +852,8 @@ function App() {
     return (
       <div style={{ position: 'relative' }}>
         <button
-          className="theme-toggle-btn"
+          className="theme-toggle-btn auth-theme-toggle"
           onClick={toggleTheme}
-          style={{ position: 'fixed', top: 16, right: 16, zIndex: 9999 }}
           aria-label={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
         >
           {theme === 'dark' ? '☀️ Light' : '🌙 Dark'}
@@ -865,9 +872,8 @@ function App() {
     return (
       <div style={{ position: 'relative' }}>
         <button
-          className="theme-toggle-btn"
+          className="theme-toggle-btn auth-theme-toggle"
           onClick={toggleTheme}
-          style={{ position: 'fixed', top: 16, right: 16, zIndex: 9999 }}
           aria-label={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
         >
           {theme === 'dark' ? '☀️ Light' : '🌙 Dark'}
@@ -885,9 +891,8 @@ function App() {
     return (
       <div style={{ position: 'relative' }}>
         <button
-          className="theme-toggle-btn"
+          className="theme-toggle-btn auth-theme-toggle"
           onClick={toggleTheme}
-          style={{ position: 'fixed', top: 16, right: 16, zIndex: 9999 }}
           aria-label={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
         >
           {theme === 'dark' ? '☀️ Light' : '🌙 Dark'}
@@ -932,18 +937,20 @@ function App() {
               >                My Estimates
               </button>
               <button
-                className={`btn ${estimatorView === 'profile' ? 'btn-primary' : 'btn-secondary'}`}
+                className={`header-icon-btn ${estimatorView === 'profile' ? 'active' : ''}`}
                 onClick={() => setEstimatorView('profile')}
+                title="Profile"
+                aria-label="Profile"
               >
-                Profile
+                👤
               </button>
               <button
-                className="theme-toggle-btn"
+                className="header-icon-btn"
                 onClick={toggleTheme}
                 title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
                 aria-label={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
               >
-                {theme === 'dark' ? '☀️ Light' : '🌙 Dark'}
+                {theme === 'dark' ? '☀️' : '🌙'}
               </button>
               <UserBadge user={currentUser} onLogout={handleLogout} />
             </div>

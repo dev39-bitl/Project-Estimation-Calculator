@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import AdminDashboard from './AdminDashboard'
 import AdminUsers from './AdminUsers'
 import AdminEstimates from './AdminEstimates'
@@ -20,6 +20,12 @@ export default function AdminPanel({ user, onLogout }) {
   const [activeSection, setActiveSection] = useState('dashboard')
   const [selectedEstimateId, setSelectedEstimateId] = useState(null)
   const [sidebarOpen, setSidebarOpen] = useState(false)
+
+  // Remove body padding so admin fills full viewport
+  useEffect(() => {
+    document.body.classList.add('admin-page-active')
+    return () => document.body.classList.remove('admin-page-active')
+  }, [])
 
   const handleViewEstimate = (id) => {
     setSelectedEstimateId(id)
